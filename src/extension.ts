@@ -6,7 +6,7 @@ import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
 import { SessionDetailPanel } from "./presentation/session-detail-panel";
-import { ChoiceNode, SessionNode, SessionTreeProvider } from "./presentation/session-tree-provider";
+import { SessionWebviewProvider } from "./presentation/session-webview-provider";
 
 let manager: SessionManager | undefined;
 let logger: FileLogger | undefined;
@@ -21,21 +21,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await logger.info("Extension activation started", { codexPath });
   const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }));
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState));
-  const treeProvider = new SessionTreeProvider(manager);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
-  const tree = vscode.window.createTreeView("agentHub.sessions", { treeDataProvider: treeProvider });
-  context.subscriptions.push(treeProvider, detailPanel, tree, { dispose: () => void manager?.dispose() });
+  const sessionsView = new SessionWebviewProvider(manager, (sessionId) => detailPanel.show(sessionId), showError);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
+    sessionsView,
+    detailPanel,
+    { dispose: () => void manager?.dispose() },
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("agentHub.startSession", () => startSession(context, manager!)),
-    vscode.commands.registerCommand("agentHub.refresh", () => treeProvider.refresh()),
-    vscode.commands.registerCommand("agentHub.openSession", (node: SessionNode) => detailPanel.show(node.sessionId)),
-    vscode.commands.registerCommand("agentHub.approve", (node: SessionNode) => manager!.resolveApproval(node.sessionId, "accept")),
-    vscode.commands.registerCommand("agentHub.approveForSession", (node: SessionNode) => manager!.resolveApproval(node.sessionId, "acceptForSession")),
-    vscode.commands.registerCommand("agentHub.decline", (node: SessionNode) => manager!.resolveApproval(node.sessionId, "decline")),
-    vscode.commands.registerCommand("agentHub.answerInput", (node: ChoiceNode) => answerChoice(manager!, node)),
-    vscode.commands.registerCommand("agentHub.interrupt", (node: SessionNode) => manager!.interrupt(node.sessionId)),
-    vscode.commands.registerCommand("agentHub.removeSession", (node: SessionNode) => manager!.remove(node.sessionId)),
+    vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh()),
+    vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
   );
 
   const changeSubscription = manager.onDidChange(() => void notifyForChanges(manager!));
@@ -129,14 +127,6 @@ async function rememberFolder(context: vscode.ExtensionContext, uri: vscode.Uri)
   const current = context.globalState.get<string[]>("agentHub.recentFolders", []);
   const updated = [uri.fsPath, ...current.filter((item) => !samePath(item, uri.fsPath))].slice(0, 10);
   await context.globalState.update("agentHub.recentFolders", updated);
-}
-
-async function answerChoice(sessionManager: SessionManager, node: ChoiceNode): Promise<void> {
-  try {
-    sessionManager.resolveInput(node.sessionId, { [node.questionId]: [node.label] });
-  } catch (error) {
-    showError(error);
-  }
 }
 
 const notified = new Map<string, string>();
