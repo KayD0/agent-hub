@@ -97,8 +97,12 @@ export class AppServerClient implements CodexGateway {
     return { turnId: asString(turn.id) };
   }
 
-  public async steerTurn(threadId: string, text: string): Promise<void> {
-    await this.request("turn/steer", { threadId, input: [{ type: "text", text }] });
+  public async steerTurn(threadId: string, turnId: string, text: string): Promise<void> {
+    await this.request("turn/steer", {
+      threadId,
+      input: [{ type: "text", text }],
+      expectedTurnId: turnId,
+    });
   }
 
   public async interruptTurn(threadId: string, turnId: string): Promise<void> {

@@ -15,12 +15,19 @@ class FakeGateway implements CodexGateway {
   private requestListener?: (request: AppServerRequest) => void;
   private exitListener?: (reason: string) => void;
   public readonly responses: Array<{ id: string | number; result: unknown }> = [];
+  public readonly steers: Array<{ threadId: string; turnId: string; text: string }> = [];
+  public readonly turns: Array<{ threadId: string; text: string }> = [];
   public async start(): Promise<void> {}
   public async stop(): Promise<void> {}
   public async startThread(): Promise<{ threadId: string }> { return { threadId: "thread-1" }; }
   public async resumeThread(): Promise<void> {}
-  public async startTurn(): Promise<{ turnId?: string }> { return { turnId: "turn-1" }; }
-  public async steerTurn(): Promise<void> {}
+  public async startTurn(threadId: string, text: string): Promise<{ turnId?: string }> {
+    this.turns.push({ threadId, text });
+    return { turnId: `turn-${this.turns.length}` };
+  }
+  public async steerTurn(threadId: string, turnId: string, text: string): Promise<void> {
+    this.steers.push({ threadId, turnId, text });
+  }
   public async interruptTurn(): Promise<void> {}
   public respond(id: string | number, result: unknown): void { this.responses.push({ id, result }); }
   public onEvent(listener: (event: AppServerEvent) => void): { dispose(): void } { this.eventListener = listener; return { dispose() {} }; }
@@ -73,6 +80,66 @@ test("turn completion updates status", async () => {
   gateway.emitEvent({ method: "turn/completed", params: { threadId: session.threadId, turn: { id: "turn-1", status: "completed" } } });
   assert.equal(manager.get(session.id)?.status, "completed");
   assert.equal(manager.get(session.id)?.unread, true);
+});
+
+test("steering includes the active turn id", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Run tests");
+
+  await manager.steer(session.id, "Focus on failing tests");
+
+  assert.deepEqual(gateway.steers, [{
+    threadId: "thread-1",
+    turnId: "turn-1",
+    text: "Focus on failing tests",
+  }]);
+});
+
+test("steering rejects a session without an active turn", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Finish task");
+  gateway.emitEvent({ method: "turn/completed", params: { threadId: session.threadId, turn: { id: "turn-1", status: "completed" } } });
+
+  await assert.rejects(manager.steer(session.id, "More work"), /実行中のターンがありません/);
+  assert.deepEqual(gateway.steers, []);
+});
+
+test("sending a message starts a new turn after the previous turn completed", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Finish task");
+  gateway.emitEvent({ method: "turn/completed", params: { threadId: session.threadId, turn: { id: "turn-1", status: "completed" } } });
+
+  await manager.sendMessage(session.id, "More work");
+
+  assert.deepEqual(gateway.turns, [
+    { threadId: "thread-1", text: "Finish task" },
+    { threadId: "thread-1", text: "More work" },
+  ]);
+  assert.equal(manager.get(session.id)?.currentTurnId, "turn-2");
+  assert.equal(manager.get(session.id)?.status, "running");
+  assert.deepEqual(gateway.steers, []);
+});
+
+test("sending a message steers the active turn", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Run tests");
+
+  await manager.sendMessage(session.id, "Focus on failures");
+
+  assert.deepEqual(gateway.steers, [{
+    threadId: "thread-1",
+    turnId: "turn-1",
+    text: "Focus on failures",
+  }]);
+  assert.equal(gateway.turns.length, 1);
 });
 
 test("app-server exit disconnects active sessions without approving pending request", async () => {

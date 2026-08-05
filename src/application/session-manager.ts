@@ -103,9 +103,29 @@ export class SessionManager {
 
   public async steer(sessionId: string, text: string): Promise<void> {
     const session = this.requireSession(sessionId);
-    await this.gateway.steerTurn(session.threadId, text);
+    if (!session.currentTurnId) throw new Error("実行中のターンがありません。");
+    await this.gateway.steerTurn(session.threadId, session.currentTurnId, text);
     this.appendActivity(session, "message", "追加入力", text);
     this.setStatus(session, "running", "追加入力を処理中です");
+  }
+
+  public async sendMessage(sessionId: string, text: string): Promise<void> {
+    const session = this.requireSession(sessionId);
+    if (session.currentTurnId) {
+      await this.steer(sessionId, text);
+      return;
+    }
+
+    this.appendActivity(session, "message", "追加指示", text);
+    this.setStatus(session, "starting", "新しいターンを開始しています");
+    try {
+      const result = await this.gateway.startTurn(session.threadId, text);
+      session.currentTurnId = result.turnId;
+      this.setStatus(session, "running", "Codexが処理中です");
+    } catch (error) {
+      this.setStatus(session, "failed", errorMessage(error));
+      throw error;
+    }
   }
 
   public async interrupt(sessionId: string): Promise<void> {

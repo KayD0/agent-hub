@@ -46,7 +46,7 @@ export class SessionDetailPanel implements vscode.Disposable {
     const message = value as { type?: unknown; text?: unknown; decision?: unknown };
     try {
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) {
-        await this.manager.steer(sessionId, message.text.trim());
+        await this.manager.sendMessage(sessionId, message.text.trim());
       } else if (message.type === "interrupt") {
         await this.manager.interrupt(sessionId);
       } else if (message.type === "approval" && isDecision(message.decision)) {
