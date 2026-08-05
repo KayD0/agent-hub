@@ -122,6 +122,26 @@ test("sending the first message starts a turn for a ready session", async () => 
   assert.equal(manager.get(session.id)?.currentTurnId, "turn-1");
 });
 
+test("completed agent message is retained as the final result", async () => {
+  const gateway = new FakeGateway();
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(gateway, repository);
+  const session = await manager.createSession("C:\\work", "Do work");
+
+  gateway.emitEvent({
+    method: "item/completed",
+    params: { threadId: session.threadId, item: { type: "agentMessage", text: "Finished successfully." } },
+  });
+  gateway.emitEvent({
+    method: "turn/completed",
+    params: { threadId: session.threadId, turn: { id: "turn-1", status: "completed" } },
+  });
+
+  assert.equal(manager.get(session.id)?.finalResult, "Finished successfully.");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(repository.value[0]?.finalResult, "Finished successfully.");
+});
+
 test("session order remains stable and can be persisted after reordering", async () => {
   const repository = new MemoryRepository();
   repository.value = [persistedSession("thread-1", "First", 1), persistedSession("thread-2", "Second", 2)];

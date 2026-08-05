@@ -325,6 +325,7 @@ export class SessionManager {
     if (type === "agentMessage") {
       const text = optionalString(item.text) ?? "";
       this.appendActivity(session, "message", completed ? "Codex" : "メッセージ生成中", text);
+      if (completed && text.trim()) session.finalResult = text.trim();
       session.currentActivity = compact(text || "メッセージを生成中です", 120);
     } else if (type === "commandExecution") {
       const command = readCommand(item.command);

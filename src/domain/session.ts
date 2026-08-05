@@ -53,6 +53,7 @@ export interface ManagedSession {
   status: SessionStatus;
   attention: AttentionLevel;
   currentActivity?: string;
+  finalResult?: string;
   currentTurnId?: string;
   pendingInteraction?: PendingInteraction;
   unread: boolean;
@@ -69,6 +70,7 @@ export interface PersistedSession {
   status: SessionStatus;
   attention: AttentionLevel;
   currentActivity?: string;
+  finalResult?: string;
   unread: boolean;
   startedAt: number;
   updatedAt: number;
