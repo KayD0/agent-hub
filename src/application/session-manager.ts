@@ -6,7 +6,6 @@ import {
   SessionActivity,
   SessionStatus,
   attentionForStatus,
-  statusRank,
   toPersistedSession,
 } from "../domain/session";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "./ports";
@@ -56,9 +55,18 @@ export class SessionManager {
   }
 
   public list(): ManagedSession[] {
-    return [...this.sessions.values()].sort(
-      (a, b) => statusRank[a.status] - statusRank[b.status] || b.updatedAt - a.updatedAt,
-    );
+    return [...this.sessions.values()];
+  }
+
+  public async reorder(sessionIds: string[]): Promise<void> {
+    if (sessionIds.length !== this.sessions.size || new Set(sessionIds).size !== sessionIds.length) {
+      throw new Error("セッションの並び順が不正です。");
+    }
+    const ordered = sessionIds.map((sessionId) => this.requireSession(sessionId));
+    this.sessions.clear();
+    for (const session of ordered) this.sessions.set(session.id, session);
+    this.emitChange();
+    await this.persist();
   }
 
   public get(sessionId: string): ManagedSession | undefined {

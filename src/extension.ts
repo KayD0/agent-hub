@@ -31,7 +31,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("agentHub.startSession", () => startSession(context, manager!)),
+    vscode.commands.registerCommand("agentHub.startSession", async () => {
+      const session = await startSession(context, manager!);
+      if (session) detailPanel.show(session.id);
+    }),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh()),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
   );
@@ -55,7 +58,10 @@ export async function deactivate(): Promise<void> {
   manager = undefined;
 }
 
-async function startSession(context: vscode.ExtensionContext, sessionManager: SessionManager): Promise<void> {
+async function startSession(
+  context: vscode.ExtensionContext,
+  sessionManager: SessionManager,
+): Promise<ReturnType<SessionManager["get"]>> {
   await logger?.info("Start session command invoked");
   try {
     await logger?.info("Opening folder selector");
@@ -66,15 +72,17 @@ async function startSession(context: vscode.ExtensionContext, sessionManager: Se
     }
     await logger?.info("Folder selected", { cwd: folder.fsPath });
     await logger?.info("Session creation started", { cwd: folder.fsPath });
-    await vscode.window.withProgress(
+    const session = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Codexセッションを開始しています" },
       () => sessionManager.createSession(folder.fsPath),
     );
     await logger?.info("Session creation completed", { cwd: folder.fsPath });
     await rememberFolder(context, folder);
+    return session;
   } catch (error) {
     await logger?.error("Start session failed", error);
     showError(error);
+    return undefined;
   }
 }
 

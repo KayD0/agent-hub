@@ -46,6 +46,20 @@ class RetryGateway extends FakeGateway {
   }
 }
 
+function persistedSession(id: string, title: string, updatedAt: number): PersistedSession {
+  return {
+    id,
+    threadId: id,
+    title,
+    cwd: `C:\\work\\${title}`,
+    status: "completed",
+    attention: "informational",
+    unread: false,
+    startedAt: updatedAt,
+    updatedAt,
+  };
+}
+
 test("attention level follows session status", () => {
   assert.equal(attentionForStatus("running"), "none");
   assert.equal(attentionForStatus("waiting_for_approval"), "action_required");
@@ -106,6 +120,21 @@ test("sending the first message starts a turn for a ready session", async () => 
   assert.deepEqual(gateway.turns, [{ threadId: "thread-1", text: "Inspect the project" }]);
   assert.equal(manager.get(session.id)?.status, "running");
   assert.equal(manager.get(session.id)?.currentTurnId, "turn-1");
+});
+
+test("session order remains stable and can be persisted after reordering", async () => {
+  const repository = new MemoryRepository();
+  repository.value = [persistedSession("thread-1", "First", 1), persistedSession("thread-2", "Second", 2)];
+  const manager = new SessionManager(new FakeGateway(), repository);
+  await manager.initialize();
+
+  assert.deepEqual(manager.list().map(({ id }) => id), ["thread-1", "thread-2"]);
+
+  await manager.reorder(["thread-2", "thread-1"]);
+
+  assert.deepEqual(manager.list().map(({ id }) => id), ["thread-2", "thread-1"]);
+  assert.deepEqual(repository.value.map(({ id }) => id), ["thread-2", "thread-1"]);
+  await assert.rejects(manager.reorder(["thread-1"]), /並び順が不正/);
 });
 
 test("steering includes the active turn id", async () => {

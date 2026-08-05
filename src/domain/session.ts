@@ -74,18 +74,6 @@ export interface PersistedSession {
   updatedAt: number;
 }
 
-export const statusRank: Record<SessionStatus, number> = {
-  waiting_for_approval: 0,
-  waiting_for_input: 0,
-  failed: 1,
-  disconnected: 2,
-  ready: 3,
-  starting: 4,
-  running: 4,
-  completed: 5,
-  interrupted: 6,
-};
-
 export function attentionForStatus(status: SessionStatus): AttentionLevel {
   if (status === "waiting_for_approval" || status === "waiting_for_input") {
     return "action_required";
