@@ -69,18 +69,18 @@ export class SessionManager {
     return this.sessions.get(threadId);
   }
 
-  public async createSession(cwd: string, prompt: string): Promise<ManagedSession> {
+  public async createSession(cwd: string, prompt?: string): Promise<ManagedSession> {
     await this.initialize();
     const { threadId } = await this.gateway.startThread(cwd);
     const now = Date.now();
     const session: ManagedSession = {
       id: threadId,
       threadId,
-      title: titleFromPrompt(prompt),
+      title: prompt ? titleFromPrompt(prompt) : titleFromPath(cwd),
       cwd,
-      status: "starting",
+      status: prompt ? "starting" : "ready",
       attention: "none",
-      currentActivity: "ターンを開始しています",
+      currentActivity: prompt ? "ターンを開始しています" : "指示を入力できます",
       unread: false,
       startedAt: now,
       updatedAt: now,
@@ -90,6 +90,7 @@ export class SessionManager {
     this.appendActivity(session, "system", "セッションを開始", cwd);
     this.emitChange();
     await this.persist();
+    if (!prompt) return session;
     try {
       const result = await this.gateway.startTurn(threadId, prompt);
       session.currentTurnId = result.turnId;
@@ -177,15 +178,16 @@ export class SessionManager {
 
   private async restoreThreads(): Promise<void> {
     for (const session of this.sessions.values()) {
+      const wasReady = session.status === "ready";
       session.pendingInteraction = undefined;
       session.status = "disconnected";
       session.attention = attentionForStatus("disconnected");
       session.currentActivity = "セッション状態を復元中です";
       try {
         await this.gateway.resumeThread(session.threadId);
-        session.status = "completed";
-        session.attention = attentionForStatus("completed");
-        session.currentActivity = "再開可能です";
+        session.status = wasReady ? "ready" : "completed";
+        session.attention = attentionForStatus(session.status);
+        session.currentActivity = wasReady ? "指示を入力できます" : "再開可能です";
       } catch (error) {
         session.currentActivity = `復元できません: ${errorMessage(error)}`;
       }
@@ -385,6 +387,11 @@ export class SessionManager {
 
 function titleFromPrompt(prompt: string): string {
   return compact(prompt.split(/\r?\n/, 1)[0].trim() || "新しいCodexセッション", 48);
+}
+
+function titleFromPath(cwd: string): string {
+  const normalized = cwd.replace(/[\\/]+$/, "");
+  return normalized.split(/[\\/]/).pop() || "新しいCodexセッション";
 }
 
 function compact(value: string, length: number): string {

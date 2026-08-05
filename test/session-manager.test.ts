@@ -82,6 +82,32 @@ test("turn completion updates status", async () => {
   assert.equal(manager.get(session.id)?.unread, true);
 });
 
+test("creating a session without a prompt leaves it ready without starting a turn", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+
+  const session = await manager.createSession("C:\\work\\agent-link");
+
+  assert.equal(session.title, "agent-link");
+  assert.equal(session.status, "ready");
+  assert.equal(session.currentTurnId, undefined);
+  assert.deepEqual(gateway.turns, []);
+});
+
+test("sending the first message starts a turn for a ready session", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work\\agent-link");
+
+  await manager.sendMessage(session.id, "Inspect the project");
+
+  assert.deepEqual(gateway.turns, [{ threadId: "thread-1", text: "Inspect the project" }]);
+  assert.equal(manager.get(session.id)?.status, "running");
+  assert.equal(manager.get(session.id)?.currentTurnId, "turn-1");
+});
+
 test("steering includes the active turn id", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());

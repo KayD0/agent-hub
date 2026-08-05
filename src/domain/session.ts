@@ -1,4 +1,5 @@
 export type SessionStatus =
+  | "ready"
   | "starting"
   | "running"
   | "waiting_for_approval"
@@ -78,10 +79,11 @@ export const statusRank: Record<SessionStatus, number> = {
   waiting_for_input: 0,
   failed: 1,
   disconnected: 2,
-  starting: 3,
-  running: 3,
-  completed: 4,
-  interrupted: 5,
+  ready: 3,
+  starting: 4,
+  running: 4,
+  completed: 5,
+  interrupted: 6,
 };
 
 export function attentionForStatus(status: SessionStatus): AttentionLevel {

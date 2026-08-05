@@ -65,23 +65,10 @@ async function startSession(context: vscode.ExtensionContext, sessionManager: Se
       return;
     }
     await logger?.info("Folder selected", { cwd: folder.fsPath });
-    await logger?.info("Opening prompt input");
-    const prompt = await vscode.window.showInputBox({
-      title: "新しいCodexセッション",
-      prompt: "Codexへの最初の指示を入力してください",
-      placeHolder: "例: このリポジトリのテスト失敗を調査して修正してください",
-      ignoreFocusOut: true,
-      validateInput: (value) => value.trim() ? undefined : "指示を入力してください。",
-    });
-    if (!prompt?.trim()) {
-      await logger?.info("Start session cancelled at prompt input");
-      return;
-    }
-    await logger?.info("Prompt received", { length: prompt.trim().length });
     await logger?.info("Session creation started", { cwd: folder.fsPath });
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Codexセッションを開始しています" },
-      () => sessionManager.createSession(folder.fsPath, prompt.trim()),
+      () => sessionManager.createSession(folder.fsPath),
     );
     await logger?.info("Session creation completed", { cwd: folder.fsPath });
     await rememberFolder(context, folder);
