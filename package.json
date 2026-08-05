@@ -1,0 +1,99 @@
+{
+  "name": "agenthub-codex",
+  "displayName": "AgentHub for Codex",
+  "description": "Monitor and control multiple Codex app-server sessions from one VS Code view.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onView:agentHub.sessions"],
+  "main": "./dist/src/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentHub",
+          "title": "AgentHub",
+          "icon": "media/agenthub.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentHub": [
+        {
+          "id": "agentHub.sessions",
+          "name": "Codex Sessions"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "agentHub.sessions",
+        "contents": "Codexセッションはまだありません。\n[新しいセッションを開始](command:agentHub.startSession)"
+      }
+    ],
+    "commands": [
+      { "command": "agentHub.startSession", "title": "AgentHub: 新しいCodexセッション" },
+      { "command": "agentHub.refresh", "title": "AgentHub: セッション一覧を更新" },
+      { "command": "agentHub.openSession", "title": "AgentHub: セッション詳細を開く" },
+      { "command": "agentHub.approve", "title": "AgentHub: 許可" },
+      { "command": "agentHub.approveForSession", "title": "AgentHub: このセッションで許可" },
+      { "command": "agentHub.decline", "title": "AgentHub: 拒否" },
+      { "command": "agentHub.answerInput", "title": "AgentHub: 選択肢を回答" },
+      { "command": "agentHub.interrupt", "title": "AgentHub: セッションを中断" },
+      { "command": "agentHub.removeSession", "title": "AgentHub: 一覧から削除" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "agentHub.startSession", "when": "view == agentHub.sessions", "group": "navigation@1" },
+        { "command": "agentHub.refresh", "when": "view == agentHub.sessions", "group": "navigation@2" }
+      ],
+      "view/item/context": [
+        { "command": "agentHub.approve", "when": "view == agentHub.sessions && viewItem == agentHub.approval", "group": "inline@1" },
+        { "command": "agentHub.decline", "when": "view == agentHub.sessions && viewItem == agentHub.approval", "group": "inline@2" },
+        { "command": "agentHub.interrupt", "when": "view == agentHub.sessions && viewItem == agentHub.running", "group": "inline@1" },
+        { "command": "agentHub.openSession", "when": "view == agentHub.sessions && viewItem =~ /agentHub\\./", "group": "navigation@1" },
+        { "command": "agentHub.approveForSession", "when": "view == agentHub.sessions && viewItem == agentHub.approval", "group": "agentHub@1" },
+        { "command": "agentHub.removeSession", "when": "view == agentHub.sessions && viewItem =~ /agentHub\\.(completed|failed|interrupted|disconnected)/", "group": "agentHub@9" }
+      ]
+    },
+    "configuration": {
+      "title": "AgentHub",
+      "properties": {
+        "agentHub.codexPath": {
+          "type": "string",
+          "default": "codex",
+          "description": "Codex CLI executable path."
+        },
+        "agentHub.notifyOnActionRequired": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications when a session needs approval or input."
+        },
+        "agentHub.notifyOnComplete": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications when a session completes."
+        },
+        "agentHub.notifyOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications when a session fails."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . -w",
+    "test": "npm run compile && node --test dist/test/**/*.test.js",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.100.0",
+    "typescript": "^5.9.0"
+  }
+}
