@@ -17,8 +17,10 @@ VS Codeでこのフォルダを開き、`F5`で`Run AgentHub Extension`を起動
 ## 前提
 
 - VS Code Desktop 1.100以降
-- Codex CLIがインストール済みで、認証が完了していること
+- Codex CLIがインストール済みであること
 - 既定ではPATH上の`codex`を使用。必要なら`agentHub.codexPath`を設定
+
+Codexへ未ログインの場合は、AgentHubサイドバーからChatGPTのブラウザ認証を開始できます。ブラウザのコールバックを利用できない環境では、デバイスコード認証へ切り替えられます。認証情報はAgentHub独自には保存せず、Codex app-serverへ管理を委譲します。
 
 ## MVP機能
 
@@ -29,6 +31,7 @@ VS Codeでこのフォルダを開き、`F5`で`Run AgentHub Extension`を起動
 - メッセージ、コマンド、ファイル変更の詳細表示
 - 追加入力とTurn中断
 - セッションメタデータの復元
+- ChatGPTブラウザ認証とデバイスコード認証
 
 ## 現時点の主な制約
 

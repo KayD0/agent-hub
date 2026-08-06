@@ -28,7 +28,6 @@ Codexとの通信には`codex app-server`を使用します。通常のCodexタ�
 - Node.js 20以降
 - npm
 - Codex CLI
-- Codexの認証が完了していること
 
 VS Code Web、`vscode.dev`、`github.dev`は対象外です。
 
@@ -52,7 +51,22 @@ codex --version
 codex
 ```
 
-AgentHubはCodexの認証情報を独自管理しません。Codex CLIが利用している認証状態を使用します。
+AgentHubはCodexの認証情報を独自管理しません。Codex CLIと同じCodex app-serverの認証状態を使用します。未認証の場合は、AgentHubからブラウザ認証またはデバイスコード認証を開始できます。
+
+### 3.3 AgentHubからログインする
+
+1. Activity BarからAgentHubを開きます。
+2. `ブラウザでログイン`を選択します。
+3. 開いたブラウザでChatGPTへのログインを完了します。
+4. AgentHubに`Codexにログイン済み`と表示されることを確認します。
+
+ブラウザを開けない場合やローカルコールバックを利用できない場合は、`デバイスコード`を選択してください。認証コードがクリップボードへコピーされ、確認ページが開きます。ページ上でコードを入力すると、AgentHubへ認証結果が反映されます。
+
+コマンドパレットから次の操作も利用できます。
+
+- `AgentHub: ChatGPTでログイン`
+- `AgentHub: デバイスコードでログイン`
+- `AgentHub: ログアウト`
 
 ## 4. 初回起動
 

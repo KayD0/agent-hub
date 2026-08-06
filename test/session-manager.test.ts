@@ -29,6 +29,14 @@ class FakeGateway implements CodexGateway {
     this.steers.push({ threadId, turnId, text });
   }
   public async interruptTurn(): Promise<void> {}
+  public async readAccount() { return { account: null, requiresOpenaiAuth: true }; }
+  public async startLogin(type: "chatgpt" | "chatgptDeviceCode") {
+    return type === "chatgpt"
+      ? { type, loginId: "login-1", authUrl: "https://example.com/login" } as const
+      : { type, loginId: "login-1", verificationUrl: "https://example.com/device", userCode: "ABCD-1234" } as const;
+  }
+  public async cancelLogin(): Promise<void> {}
+  public async logout(): Promise<void> {}
   public respond(id: string | number, result: unknown): void { this.responses.push({ id, result }); }
   public onEvent(listener: (event: AppServerEvent) => void): { dispose(): void } { this.eventListener = listener; return { dispose() {} }; }
   public onRequest(listener: (request: AppServerRequest) => void): { dispose(): void } { this.requestListener = listener; return { dispose() {} }; }

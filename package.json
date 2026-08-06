@@ -37,6 +37,9 @@
     ],
     "commands": [
       { "command": "agentHub.startSession", "title": "AgentHub: 新しいCodexセッション" },
+      { "command": "agentHub.login", "title": "AgentHub: ChatGPTでログイン" },
+      { "command": "agentHub.loginDeviceCode", "title": "AgentHub: デバイスコードでログイン" },
+      { "command": "agentHub.logout", "title": "AgentHub: ログアウト" },
       { "command": "agentHub.refresh", "title": "AgentHub: セッション一覧を更新" },
       { "command": "agentHub.openSession", "title": "AgentHub: セッション詳細を開く" }
     ],

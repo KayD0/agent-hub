@@ -1,4 +1,5 @@
 import { PersistedSession } from "../domain/session";
+import { AccountSnapshot, LoginStartResult } from "../domain/authentication";
 
 export interface AppServerEvent {
   method: string;
@@ -17,6 +18,10 @@ export interface CodexGateway {
   startTurn(threadId: string, text: string): Promise<{ turnId?: string }>;
   steerTurn(threadId: string, turnId: string, text: string): Promise<void>;
   interruptTurn(threadId: string, turnId: string): Promise<void>;
+  readAccount(refreshToken?: boolean): Promise<AccountSnapshot>;
+  startLogin(type: "chatgpt" | "chatgptDeviceCode"): Promise<LoginStartResult>;
+  cancelLogin(loginId: string): Promise<void>;
+  logout(): Promise<void>;
   respond(requestId: string | number, result: unknown): void;
   onEvent(listener: (event: AppServerEvent) => void): { dispose(): void };
   onRequest(listener: (request: AppServerRequest) => void): { dispose(): void };

@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { AuthenticationManager } from "./application/authentication-manager";
 import { SessionManager } from "./application/session-manager";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
@@ -20,9 +21,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const codexPath = vscode.workspace.getConfiguration("agentHub").get<string>("codexPath", "codex");
   await logger.info("Extension activation started", { codexPath });
   const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }));
+  const authentication = new AuthenticationManager(gateway);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState));
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
-  const sessionsView = new SessionWebviewProvider(manager, (sessionId) => detailPanel.show(sessionId), showError);
+  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     sessionsView,
@@ -32,9 +34,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscode.commands.registerCommand("agentHub.startSession", async () => {
+      if (!authentication.isAuthenticated()) {
+        const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
+        if (action) await vscode.commands.executeCommand("agentHub.login");
+        return;
+      }
       const session = await startSession(context, manager!);
       if (session) detailPanel.show(session.id);
     }),
+    vscode.commands.registerCommand("agentHub.login", () => startBrowserLogin(authentication)),
+    vscode.commands.registerCommand("agentHub.loginDeviceCode", () => startDeviceCodeLogin(authentication)),
+    vscode.commands.registerCommand("agentHub.logout", () => authentication.logout()),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh()),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
   );
@@ -43,12 +53,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(changeSubscription);
 
   try {
+    await logger.info("Authentication initialization started");
+    await authentication.initialize();
+    await logger.info("Authentication initialization completed", authentication.getState());
     await logger.info("Session manager initialization started");
     await manager.initialize();
     await logger.info("Session manager initialization completed");
   } catch (error) {
     await logger.error("Session manager initialization failed", error);
     output.show(true);
+    showError(error);
+  }
+}
+
+async function startBrowserLogin(authentication: AuthenticationManager): Promise<void> {
+  try {
+    const login = await authentication.startBrowserLogin();
+    const opened = await vscode.env.openExternal(vscode.Uri.parse(login.authUrl));
+    if (!opened) await startDeviceCodeLogin(authentication);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function startDeviceCodeLogin(authentication: AuthenticationManager): Promise<void> {
+  try {
+    const login = await authentication.startDeviceCodeLogin();
+    await vscode.env.clipboard.writeText(login.userCode);
+    await vscode.env.openExternal(vscode.Uri.parse(login.verificationUrl));
+    void vscode.window.showInformationMessage(`Codex認証コード ${login.userCode} をクリップボードへコピーしました。`);
+  } catch (error) {
     showError(error);
   }
 }

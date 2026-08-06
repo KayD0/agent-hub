@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { AppServerEvent, AppServerRequest, CodexGateway } from "../../application/ports";
+import { AccountSnapshot, LoginStartResult } from "../../domain/authentication";
 
 type RequestId = number;
 
@@ -107,6 +108,47 @@ export class AppServerClient implements CodexGateway {
 
   public async interruptTurn(threadId: string, turnId: string): Promise<void> {
     await this.request("turn/interrupt", { threadId, turnId });
+  }
+
+  public async readAccount(refreshToken = false): Promise<AccountSnapshot> {
+    const result = asObject(await this.request("account/read", { refreshToken }));
+    const accountValue = result.account;
+    const account = accountValue === null ? null : asObject(accountValue);
+    const type = asString(account?.type);
+    return {
+      account: type ? {
+        type,
+        email: asString(account?.email),
+        planType: asString(account?.planType),
+      } : null,
+      requiresOpenaiAuth: result.requiresOpenaiAuth === true,
+    };
+  }
+
+  public async startLogin(type: "chatgpt" | "chatgptDeviceCode"): Promise<LoginStartResult> {
+    const params = type === "chatgpt"
+      ? { type, useHostedLoginSuccessPage: true, appBrand: "codex" }
+      : { type };
+    const result = asObject(await this.request("account/login/start", params));
+    const loginId = asString(result.loginId);
+    if (!loginId) throw new Error("認証開始応答にLogin IDがありません。");
+    if (type === "chatgpt") {
+      const authUrl = asString(result.authUrl);
+      if (!authUrl) throw new Error("ブラウザ認証URLが返されませんでした。");
+      return { type, loginId, authUrl };
+    }
+    const verificationUrl = asString(result.verificationUrl);
+    const userCode = asString(result.userCode);
+    if (!verificationUrl || !userCode) throw new Error("デバイスコード認証情報が返されませんでした。");
+    return { type, loginId, verificationUrl, userCode };
+  }
+
+  public async cancelLogin(loginId: string): Promise<void> {
+    await this.request("account/login/cancel", { loginId });
+  }
+
+  public async logout(): Promise<void> {
+    await this.request("account/logout", {});
   }
 
   public respond(requestId: string | number, result: unknown): void {
