@@ -2,7 +2,7 @@
 
 複数のCodexセッションをVS Codeのサイドバーから監視・操作する拡張機能です。`codex app-server`のstdio JSONLプロトコルを利用し、PTYや画面文字列解析に依存しません。
 
-詳しい導入方法と操作方法は[利用マニュアル](./docs/user-manual.md)を参照してください。
+アプリの価値や利用場面は[概要とメリット](./docs/app-benefits.md)、詳しい導入方法と操作方法は[利用マニュアル](./docs/user-manual.md)を参照してください。
 
 ## 開発
 
@@ -35,4 +35,3 @@ VS Codeでこのフォルダを開き、`F5`で`Run AgentHub Extension`を起動
 - 開発版であり、VSIX配布は未対応
 - 自由入力型の`requestUserInput`と複数質問への一括回答は未完成
 - app-serverの自動再起動とVS Code E2Eテストは未対応
-

@@ -1,5 +1,7 @@
 # AgentHub for Codex 利用マニュアル
 
+アプリの価値や想定利用場面については[AgentHub for Codexの概要とメリット](./app-benefits.md)を参照してください。
+
 ## 1. AgentHubでできること
 
 AgentHub for Codexは、複数のCodexセッションをVS Codeのサイドバーでまとめて監視・操作する拡張機能です。
@@ -341,4 +343,3 @@ npm run watch
 # コンパイルと単体テスト
 npm test
 ```
-
