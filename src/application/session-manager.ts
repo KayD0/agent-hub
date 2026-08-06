@@ -8,9 +8,15 @@ import {
   attentionForStatus,
   toPersistedSession,
 } from "../domain/session";
+import {
+  AutoApprovalPolicy,
+  EMPTY_AUTO_APPROVAL_POLICY,
+  evaluateAutoApproval,
+} from "../domain/approval-policy";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "./ports";
 
 const MAX_ACTIVITIES = 500;
+const MAX_APPROVAL_AUDIT_ENTRIES = 200;
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000];
 
 export class SessionManager {
@@ -28,6 +34,7 @@ export class SessionManager {
     private readonly gateway: CodexGateway,
     private readonly repository: SessionRepository,
     private readonly reconnectDelaysMs: readonly number[] = RECONNECT_DELAYS_MS,
+    private readonly autoApprovalPolicy: AutoApprovalPolicy = EMPTY_AUTO_APPROVAL_POLICY,
   ) {}
 
   public initialize(): Promise<void> {
@@ -110,6 +117,7 @@ export class SessionManager {
       attention: "none",
       currentActivity: prompt ? "ターンを開始しています" : "指示を入力できます",
       autoApprove: false,
+      approvalAudit: [],
       unread: false,
       startedAt: now,
       updatedAt: now,
@@ -173,6 +181,14 @@ export class SessionManager {
       throw new Error("この要求はセッション単位の許可に対応していません。");
     }
     this.gateway.respond(pending.requestId, { decision });
+    this.appendApprovalAudit(session, {
+      timestamp: Date.now(),
+      operation: pending.method === "item/commandExecution/requestApproval" ? "command" : "file_change",
+      subject: pending.command ?? pending.targetPath ?? pending.description,
+      decision: decision === "accept" ? "accepted" : decision === "acceptForSession" ? "accepted_for_session" : "declined",
+      reason: pending.policyReason,
+      matchedRule: pending.matchedRule,
+    });
     this.appendActivity(session, "system", `承認応答: ${decision}`, pending.title);
     session.pendingInteraction = undefined;
     this.setStatus(session, "running", "承認結果をCodexへ送信しました");
@@ -183,8 +199,11 @@ export class SessionManager {
     session.autoApprove = enabled;
     this.appendActivity(session, "system", enabled ? "Auto承認を有効化" : "Auto承認を無効化");
     if (enabled && session.pendingInteraction?.kind === "approval") {
-      this.resolveApproval(sessionId, session.pendingInteraction.allowForSession ? "acceptForSession" : "accept");
-      return;
+      const pending = session.pendingInteraction;
+      if (pending.matchedRule) {
+        this.resolveAutoApproval(session, pending);
+        return;
+      }
     }
     this.emitChange();
   }
@@ -267,6 +286,11 @@ export class SessionManager {
     if (request.method === "item/commandExecution/requestApproval") {
       const command = optionalString(params.command);
       const reason = optionalString(params.reason);
+      const policyResult = evaluateAutoApproval(this.autoApprovalPolicy, {
+        operation: "command",
+        sessionRoot: session.cwd,
+        command,
+      });
       session.pendingInteraction = {
         kind: "approval",
         requestId: request.id,
@@ -274,11 +298,13 @@ export class SessionManager {
         title: "コマンド実行の承認",
         description: reason,
         command,
+        policyReason: policyResult.reason,
+        matchedRule: policyResult.matchedRule,
         allowForSession: true,
       };
       this.appendActivity(session, "command", "承認待ち", command ?? reason);
-      if (session.autoApprove) {
-        this.resolveApproval(session.id, "acceptForSession");
+      if (session.autoApprove && policyResult.autoApprove) {
+        this.resolveAutoApproval(session, session.pendingInteraction);
         return;
       }
       this.setStatus(session, "waiting_for_approval", command ?? reason ?? "コマンド実行の承認が必要です");
@@ -288,17 +314,25 @@ export class SessionManager {
     if (request.method === "item/fileChange/requestApproval") {
       const reason = optionalString(params.reason);
       const grantRoot = optionalString(params.grantRoot);
+      const policyResult = evaluateAutoApproval(this.autoApprovalPolicy, {
+        operation: "file_change",
+        sessionRoot: session.cwd,
+        targetPath: grantRoot,
+      });
       session.pendingInteraction = {
         kind: "approval",
         requestId: request.id,
         method: request.method,
         title: "ファイル変更の承認",
         description: reason ?? grantRoot,
+        targetPath: grantRoot,
+        policyReason: policyResult.reason,
+        matchedRule: policyResult.matchedRule,
         allowForSession: true,
       };
       this.appendActivity(session, "file", "承認待ち", reason ?? grantRoot);
-      if (session.autoApprove) {
-        this.resolveApproval(session.id, "acceptForSession");
+      if (session.autoApprove && policyResult.autoApprove) {
+        this.resolveAutoApproval(session, session.pendingInteraction);
         return;
       }
       this.setStatus(session, "waiting_for_approval", reason ?? "ファイル変更の承認が必要です");
@@ -447,6 +481,28 @@ export class SessionManager {
     if (session.activities.length > MAX_ACTIVITIES) session.activities.splice(0, session.activities.length - MAX_ACTIVITIES);
   }
 
+  private resolveAutoApproval(session: ManagedSession, pending: Extract<NonNullable<ManagedSession["pendingInteraction"]>, { kind: "approval" }>): void {
+    this.gateway.respond(pending.requestId, { decision: pending.allowForSession ? "acceptForSession" : "accept" });
+    this.appendApprovalAudit(session, {
+      timestamp: Date.now(),
+      operation: pending.method === "item/commandExecution/requestApproval" ? "command" : "file_change",
+      subject: pending.command ?? pending.targetPath ?? pending.description,
+      decision: "auto_approved",
+      reason: pending.policyReason,
+      matchedRule: pending.matchedRule,
+    });
+    this.appendActivity(session, "system", "ポリシーにより自動承認", pending.matchedRule);
+    session.pendingInteraction = undefined;
+    this.setStatus(session, "running", "Auto承認ポリシーを適用しました");
+  }
+
+  private appendApprovalAudit(session: ManagedSession, entry: ManagedSession["approvalAudit"][number]): void {
+    session.approvalAudit.push(entry);
+    if (session.approvalAudit.length > MAX_APPROVAL_AUDIT_ENTRIES) {
+      session.approvalAudit.splice(0, session.approvalAudit.length - MAX_APPROVAL_AUDIT_ENTRIES);
+    }
+  }
+
   private requireSession(sessionId: string): ManagedSession {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error("セッションが見つかりません。");
@@ -454,7 +510,14 @@ export class SessionManager {
   }
 
   private fromPersisted(persisted: PersistedSession): ManagedSession {
-    return { ...persisted, autoApprove: false, pendingInteraction: undefined, currentTurnId: undefined, activities: [] };
+    return {
+      ...persisted,
+      autoApprove: false,
+      approvalAudit: persisted.approvalAudit ?? [],
+      pendingInteraction: undefined,
+      currentTurnId: undefined,
+      activities: [],
+    };
   }
 
   private emitChange(): void {

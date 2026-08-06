@@ -109,6 +109,22 @@
           "type": "boolean",
           "default": true,
           "description": "Show notifications when a session fails."
+        },
+        "agentHub.autoApprove.allowedCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Auto-approve only command lines that exactly match an entry while session Auto mode is enabled. Destructive, network, and push commands still require confirmation."
+        },
+        "agentHub.autoApprove.allowedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Auto-approve file change grants only under these paths while session Auto mode is enabled. Use ${sessionRoot} for the session working folder."
         }
       }
     }
@@ -116,8 +132,8 @@
   "scripts": {
     "compile": "tsc -p .",
     "watch": "tsc -p . -w",
-    "test": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/session-manager.test.js dist/test/protocol-boundaries.test.js dist/test/app-server-client.test.js dist/test/markdown-renderer.test.js",
-    "test:unit": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/session-manager.test.js dist/test/markdown-renderer.test.js",
+    "test": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/protocol-boundaries.test.js dist/test/app-server-client.test.js dist/test/markdown-renderer.test.js",
+    "test:unit": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/markdown-renderer.test.js",
     "test:protocol": "npm run compile && node --test dist/test/protocol-boundaries.test.js",
     "test:app-server": "npm run compile && node --test dist/test/app-server-client.test.js",
     "test:extension": "npm run compile && node scripts/run-extension-tests.js",
