@@ -127,7 +127,8 @@ test("approval request moves session to action required and resolves once", asyn
 
 test("auto mode approves supported requests for the current session", async () => {
   const gateway = new FakeGateway();
-  const manager = new SessionManager(gateway, new MemoryRepository());
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(gateway, repository, undefined, { allowedCommands: ["npm test"], allowedPaths: [] });
   await manager.initialize();
   const session = await manager.createSession("C:\\work", "Run tests");
   manager.setAutoApprove(session.id, true);
@@ -141,6 +142,36 @@ test("auto mode approves supported requests for the current session", async () =
   assert.deepEqual(gateway.responses, [{ id: 43, result: { decision: "acceptForSession" } }]);
   assert.equal(manager.get(session.id)?.pendingInteraction, undefined);
   assert.equal(manager.get(session.id)?.status, "running");
+  assert.deepEqual(manager.get(session.id)?.approvalAudit[0], {
+    timestamp: manager.get(session.id)?.approvalAudit[0]?.timestamp,
+    operation: "command",
+    subject: "npm test",
+    decision: "auto_approved",
+    reason: "登録済みコマンドと完全一致しました",
+    matchedRule: "command:npm test",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(repository.value[0]?.approvalAudit?.[0]?.decision, "auto_approved");
+});
+
+test("auto mode keeps unmatched commands pending for manual review", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository(), undefined, { allowedCommands: ["npm test"], allowedPaths: [] });
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Publish");
+  manager.setAutoApprove(session.id, true);
+
+  gateway.emitRequest({
+    id: 47,
+    method: "item/commandExecution/requestApproval",
+    params: { threadId: session.threadId, command: "git push origin main" },
+  });
+
+  assert.deepEqual(gateway.responses, []);
+  assert.equal(manager.get(session.id)?.status, "waiting_for_approval");
+  const pending = manager.get(session.id)?.pendingInteraction;
+  assert.equal(pending?.kind, "approval");
+  if (pending?.kind === "approval") assert.match(pending.policyReason, /手動確認/);
 });
 
 test("auto mode does not answer user input requests", async () => {

@@ -44,6 +44,9 @@ export type PendingInteraction =
       title: string;
       description?: string;
       command?: string;
+      targetPath?: string;
+      policyReason: string;
+      matchedRule?: string;
       allowForSession: boolean;
     }
   | {
@@ -61,6 +64,15 @@ export interface SessionActivity {
   detail?: string;
 }
 
+export interface ApprovalAuditEntry {
+  timestamp: number;
+  operation: "command" | "file_change";
+  subject?: string;
+  decision: "auto_approved" | "accepted" | "accepted_for_session" | "declined";
+  reason: string;
+  matchedRule?: string;
+}
+
 export interface ManagedSession {
   id: string;
   threadId: string;
@@ -71,6 +83,7 @@ export interface ManagedSession {
   currentActivity?: string;
   finalResult?: string;
   autoApprove: boolean;
+  approvalAudit: ApprovalAuditEntry[];
   currentTurnId?: string;
   pendingInteraction?: PendingInteraction;
   unread: boolean;
@@ -88,6 +101,7 @@ export interface PersistedSession {
   attention: AttentionLevel;
   currentActivity?: string;
   finalResult?: string;
+  approvalAudit?: ApprovalAuditEntry[];
   unread: boolean;
   startedAt: number;
   updatedAt: number;

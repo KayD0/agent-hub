@@ -259,8 +259,20 @@ VS Code設定で`AgentHub`を検索してください。
 | `agentHub.notifyOnActionRequired` | `true` | 承認・入力待ちの通知 |
 | `agentHub.notifyOnComplete` | `true` | 完了通知 |
 | `agentHub.notifyOnFailure` | `true` | 失敗・切断通知 |
+| `agentHub.autoApprove.allowedCommands` | `[]` | Auto承認できるコマンドの完全一致リスト |
+| `agentHub.autoApprove.allowedPaths` | `[]` | Auto承認できるファイル変更パス。`${sessionRoot}`でセッションの作業フォルダを指定可能 |
 
-### 11.1 Codexが見つからない場合
+### 11.1 Auto承認ポリシー
+
+セッション一覧の`Auto`を有効にしても、すべての要求が自動承認されるわけではありません。設定したコマンドまたはパスに一致する要求だけが自動承認されます。初期状態では許可ルールが空のため、Autoを有効にしてもすべて手動確認になります。
+
+コマンドは前後の空白を除いた文字列が設定値と完全一致する場合だけ対象になります。`git push`、`git reset --hard`、再帰削除、外部通信を含むコマンドは、許可リストに登録されていても手動確認になります。
+
+ファイル変更は、セッションの作業フォルダ内であり、かつ`allowedPaths`に指定したパス配下の場合だけ対象になります。対象パスをapp-serverの要求から確認できない場合は手動確認になります。
+
+手動・自動の承認結果、判定理由、適用ルールはセッション詳細画面の`承認監査ログ`で確認できます。監査ログはセッションごとに最大200件保存されます。Auto設定自体は安全のためVS Code再起動後に無効へ戻ります。
+
+### 11.2 Codexが見つからない場合
 
 PATHから`codex`を起動できない場合は、`agentHub.codexPath`へ実行ファイルの絶対パスを設定します。
 

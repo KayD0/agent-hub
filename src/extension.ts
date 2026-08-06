@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { AuthenticationManager } from "./application/authentication-manager";
 import { SessionManager } from "./application/session-manager";
+import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
@@ -20,10 +21,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await logger.initialize();
   const codexPath = vscode.workspace.getConfiguration("agentHub").get<string>("codexPath", "codex");
   const codexArgs = vscode.workspace.getConfiguration("agentHub").get<string[]>("codexArgs", []);
+  const autoApprovalPolicy = readAutoApprovalPolicy();
   await logger.info("Extension activation started", { codexPath });
   const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }), codexArgs);
   const authentication = new AuthenticationManager(gateway);
-  manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState));
+  manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), showError);
   context.subscriptions.push(
@@ -180,6 +182,14 @@ async function notifyForChanges(sessionManager: SessionManager): Promise<void> {
 function showError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   void vscode.window.showErrorMessage(`AgentHub: ${message}`);
+}
+
+function readAutoApprovalPolicy(): AutoApprovalPolicy {
+  const config = vscode.workspace.getConfiguration("agentHub.autoApprove");
+  return {
+    allowedCommands: config.get<string[]>("allowedCommands", []),
+    allowedPaths: config.get<string[]>("allowedPaths", []),
+  };
 }
 
 function samePath(left: string, right: string): boolean {
