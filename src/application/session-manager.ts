@@ -89,6 +89,7 @@ export class SessionManager {
       status: prompt ? "starting" : "ready",
       attention: "none",
       currentActivity: prompt ? "ターンを開始しています" : "指示を入力できます",
+      autoApprove: false,
       unread: false,
       startedAt: now,
       updatedAt: now,
@@ -155,6 +156,17 @@ export class SessionManager {
     this.appendActivity(session, "system", `承認応答: ${decision}`, pending.title);
     session.pendingInteraction = undefined;
     this.setStatus(session, "running", "承認結果をCodexへ送信しました");
+  }
+
+  public setAutoApprove(sessionId: string, enabled: boolean): void {
+    const session = this.requireSession(sessionId);
+    session.autoApprove = enabled;
+    this.appendActivity(session, "system", enabled ? "Auto承認を有効化" : "Auto承認を無効化");
+    if (enabled && session.pendingInteraction?.kind === "approval") {
+      this.resolveApproval(sessionId, session.pendingInteraction.allowForSession ? "acceptForSession" : "accept");
+      return;
+    }
+    this.emitChange();
   }
 
   public resolveInput(sessionId: string, answers: Record<string, string[]>): void {
@@ -229,6 +241,10 @@ export class SessionManager {
         allowForSession: true,
       };
       this.appendActivity(session, "command", "承認待ち", command ?? reason);
+      if (session.autoApprove) {
+        this.resolveApproval(session.id, "acceptForSession");
+        return;
+      }
       this.setStatus(session, "waiting_for_approval", command ?? reason ?? "コマンド実行の承認が必要です");
       return;
     }
@@ -245,6 +261,10 @@ export class SessionManager {
         allowForSession: true,
       };
       this.appendActivity(session, "file", "承認待ち", reason ?? grantRoot);
+      if (session.autoApprove) {
+        this.resolveApproval(session.id, "acceptForSession");
+        return;
+      }
       this.setStatus(session, "waiting_for_approval", reason ?? "ファイル変更の承認が必要です");
       return;
     }
@@ -382,7 +402,7 @@ export class SessionManager {
   }
 
   private fromPersisted(persisted: PersistedSession): ManagedSession {
-    return { ...persisted, pendingInteraction: undefined, currentTurnId: undefined, activities: [] };
+    return { ...persisted, autoApprove: false, pendingInteraction: undefined, currentTurnId: undefined, activities: [] };
   }
 
   private emitChange(): void {

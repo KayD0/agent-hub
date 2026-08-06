@@ -86,6 +86,41 @@ test("approval request moves session to action required and resolves once", asyn
   assert.throws(() => manager.resolveApproval(session.id, "accept"));
 });
 
+test("auto mode approves supported requests for the current session", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Run tests");
+  manager.setAutoApprove(session.id, true);
+
+  gateway.emitRequest({
+    id: 43,
+    method: "item/commandExecution/requestApproval",
+    params: { threadId: session.threadId, command: "npm test" },
+  });
+
+  assert.deepEqual(gateway.responses, [{ id: 43, result: { decision: "acceptForSession" } }]);
+  assert.equal(manager.get(session.id)?.pendingInteraction, undefined);
+  assert.equal(manager.get(session.id)?.status, "running");
+});
+
+test("auto mode does not answer user input requests", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Ask first");
+  manager.setAutoApprove(session.id, true);
+
+  gateway.emitRequest({
+    id: 44,
+    method: "item/tool/requestUserInput",
+    params: { threadId: session.threadId, questions: [{ id: "confirm", question: "Continue?" }] },
+  });
+
+  assert.deepEqual(gateway.responses, []);
+  assert.equal(manager.get(session.id)?.status, "waiting_for_input");
+});
+
 test("turn completion updates status", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());

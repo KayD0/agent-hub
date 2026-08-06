@@ -54,6 +54,7 @@ export interface ManagedSession {
   attention: AttentionLevel;
   currentActivity?: string;
   finalResult?: string;
+  autoApprove: boolean;
   currentTurnId?: string;
   pendingInteraction?: PendingInteraction;
   unread: boolean;
@@ -90,6 +91,6 @@ export function attentionForStatus(status: SessionStatus): AttentionLevel {
 }
 
 export function toPersistedSession(session: ManagedSession): PersistedSession {
-  const { activities: _activities, pendingInteraction: _pending, currentTurnId: _turn, ...persisted } = session;
+  const { activities: _activities, autoApprove: _autoApprove, pendingInteraction: _pending, currentTurnId: _turn, ...persisted } = session;
   return persisted;
 }

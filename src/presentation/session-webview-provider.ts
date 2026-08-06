@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { SessionManager } from "../application/session-manager";
 import { ManagedSession } from "../domain/session";
 
-type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "pendingInteraction">;
+type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "autoApprove" | "pendingInteraction">;
 
 interface WebviewMessage {
   type?: unknown;
@@ -12,6 +12,7 @@ interface WebviewMessage {
   questionId?: unknown;
   answer?: unknown;
   sessionIds?: unknown;
+  enabled?: unknown;
 }
 
 export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -48,8 +49,8 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
   }
 
   private snapshot(): SessionViewModel[] {
-    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, pendingInteraction }) => ({
-      id, title, status, currentActivity, finalResult, pendingInteraction,
+    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, autoApprove, pendingInteraction }) => ({
+      id, title, status, currentActivity, finalResult, autoApprove, pendingInteraction,
     }));
   }
 
@@ -71,6 +72,8 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     try {
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) {
         await this.manager.sendMessage(sessionId, message.text.trim());
+      } else if (message.type === "autoApprove" && typeof message.enabled === "boolean") {
+        this.manager.setAutoApprove(sessionId, message.enabled);
       } else if (message.type === "open") {
         this.manager.markRead(sessionId);
         this.openSession(sessionId);
@@ -112,7 +115,7 @@ function renderHtml(webview: vscode.Webview): string {
     .session[data-status="ready"],.session[data-status="completed"]{border-left-color:var(--vscode-testing-iconPassed,var(--vscode-charts-green))}.session[data-status="starting"],.session[data-status="running"]{border-left-color:var(--vscode-progressBar-background,var(--vscode-charts-blue))}.session[data-status="waiting_for_approval"],.session[data-status="waiting_for_input"],.session[data-status="interrupted"]{border-left-color:var(--vscode-inputValidation-warningBorder,var(--vscode-charts-yellow))}.session[data-status="failed"],.session[data-status="disconnected"]{border-left-color:var(--vscode-errorForeground,var(--vscode-charts-red))}
     .session[data-status="ready"] .status,.session[data-status="completed"] .status{color:var(--vscode-testing-iconPassed,var(--vscode-charts-green))}.session[data-status="starting"] .status,.session[data-status="running"] .status{color:var(--vscode-progressBar-background,var(--vscode-charts-blue))}.session[data-status="waiting_for_approval"] .status,.session[data-status="waiting_for_input"] .status,.session[data-status="interrupted"] .status{color:var(--vscode-inputValidation-warningForeground,var(--vscode-charts-yellow))}.session[data-status="failed"] .status,.session[data-status="disconnected"] .status{color:var(--vscode-errorForeground,var(--vscode-charts-red))}
     .drag-handle,.icon-button{flex:none;border:0;padding:2px 5px;background:transparent;color:var(--vscode-foreground)}.drag-handle{cursor:grab;user-select:none}.drag-handle:active{cursor:grabbing}.drag-handle:hover,.drag-handle:focus,.icon-button:hover{outline:none;background:var(--vscode-toolbar-hoverBackground)}.session.dragging{opacity:.55}form{display:flex;gap:5px;margin-top:8px}textarea{min-width:0;flex:1;resize:vertical;min-height:30px;max-height:100px;padding:5px 6px;border:1px solid var(--vscode-input-border,transparent);background:var(--vscode-input-background);color:var(--vscode-input-foreground);font:inherit}textarea:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
-    .actions button,.header-action{border:0;padding:4px 8px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}.actions button:hover,.header-action:hover{background:var(--vscode-button-hoverBackground)}.actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.actions button.secondary,.header-action.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}
+    .actions button,.header-action{border:0;padding:4px 8px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}.actions button:hover,.header-action:hover{background:var(--vscode-button-hoverBackground)}.actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.actions button.secondary,.header-action.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}.auto-control{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--vscode-descriptionForeground);white-space:nowrap}.auto-control input{margin:0}.auto-control:has(input:checked){color:var(--vscode-inputValidation-warningForeground,var(--vscode-charts-yellow));font-weight:600}
     @media (min-width:520px){.sessions-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (min-width:820px){.sessions-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media (min-width:1100px){.sessions-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
   </style>
 </head>
@@ -131,9 +134,10 @@ function renderHtml(webview: vscode.Webview): string {
         if(actions.childElementCount)card.append(actions);grid.append(card)}grid.addEventListener('dragover',event=>{if(!draggedSessionId)return;const target=event.target.closest('.session');const dragged=grid.querySelector('[data-session-id="'+CSS.escape(draggedSessionId)+'"]');if(!target||!dragged||target===dragged)return;event.preventDefault();const rect=target.getBoundingClientRect();const after=event.clientY>rect.top+rect.height/2;target[after?'after':'before'](dragged)});grid.addEventListener('drop',event=>{if(!draggedSessionId)return;event.preventDefault();publishOrder(grid)});root.append(grid)
     if(active){const input=root.querySelector('textarea[data-session="'+CSS.escape(active)+'"]');if(input){input.focus();input.setSelectionRange(input.value.length,input.value.length)}}}
   function decorateResults(){for(const session of sessions){const card=root.querySelector('[data-session-id="'+CSS.escape(session.id)+'"]');if(!card||!session.finalResult)continue;const resultId='result-'+session.id.replace(/[^a-zA-Z0-9_-]/g,'-');const popover=el('div','result-popover');const toggle=el('button','result-toggle','最終結果');toggle.type='button';toggle.setAttribute('aria-label','最終結果を表示');toggle.setAttribute('aria-describedby',resultId);const result=el('div','result');result.id=resultId;result.setAttribute('role','tooltip');result.append(el('span','result-label','最終結果'),document.createTextNode(session.finalResult));let closeTimer;popover.addEventListener('mouseenter',()=>{clearTimeout(closeTimer);popover.classList.add('is-open')});popover.addEventListener('mouseleave',()=>{clearTimeout(closeTimer);closeTimer=setTimeout(()=>popover.classList.remove('is-open'),250)});popover.append(toggle,result);card.insertBefore(popover,card.querySelector('form'))}}
+  function decorateAutoControls(){for(const session of sessions){const card=root.querySelector('[data-session-id="'+CSS.escape(session.id)+'"]');const head=card?.querySelector('.session-head');if(!head)continue;const label=el('label','auto-control');label.title='承認要求をこのセッションで自動許可';const input=el('input');input.type='checkbox';input.checked=session.autoApprove;input.setAttribute('aria-label',session.title+'のAuto承認');input.addEventListener('change',()=>vscode.postMessage({type:'autoApprove',sessionId:session.id,enabled:input.checked}));label.append(input,document.createTextNode('Auto'));head.insertBefore(label,head.querySelector('.icon-button'))}}
   function captureFocus(){const active=document.activeElement;const card=active?.closest?.('.session');if(!card)return null;return{sessionId:card.dataset.sessionId,ariaLabel:active===card?null:active.getAttribute('aria-label')}}
   function restoreFocus(state){if(!state)return;const card=root.querySelector('[data-session-id="'+CSS.escape(state.sessionId)+'"]');if(!card)return;const target=state.ariaLabel?card.querySelector('[aria-label="'+CSS.escape(state.ariaLabel)+'"]'):card;(target||card).focus()}
-  window.addEventListener('message',event=>{if(event.data?.type==='sessions'){const focus=captureFocus();sessions=event.data.sessions;render();decorateResults();restoreFocus(focus)}});
+  window.addEventListener('message',event=>{if(event.data?.type==='sessions'){const focus=captureFocus();sessions=event.data.sessions;render();decorateResults();decorateAutoControls();restoreFocus(focus)}});
   vscode.postMessage({type:'ready'});
 </script></body></html>`;
 }
