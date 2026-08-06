@@ -171,7 +171,7 @@ test("auto mode keeps unmatched commands pending for manual review", async () =>
   assert.equal(manager.get(session.id)?.status, "waiting_for_approval");
   const pending = manager.get(session.id)?.pendingInteraction;
   assert.equal(pending?.kind, "approval");
-  if (pending?.kind === "approval") assert.match(pending.policyReason, /手動確認/);
+  if (pending?.kind === "approval") assert.match(pending.policyReason, /一致しません/);
 });
 
 test("auto mode does not answer user input requests", async () => {

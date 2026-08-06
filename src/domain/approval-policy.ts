@@ -21,7 +21,6 @@ export interface ApprovalPolicyResult {
 }
 
 const ALWAYS_CONFIRM_COMMANDS: readonly RegExp[] = [
-  /(^|\s)(git\s+push|git\s+reset\s+--hard)(\s|$)/i,
   /(^|\s)(rm\s+-[^\s]*r|remove-item\b[^\r\n]*(?:-recurse|-force)|del\s+\/s)(\s|$)/i,
   /(^|\s)(curl|wget|invoke-webrequest|invoke-restmethod)(\s|$)/i,
 ];
@@ -43,7 +42,7 @@ function evaluateCommand(policy: AutoApprovalPolicy, command: string | undefined
   const normalized = command?.trim();
   if (!normalized) return { autoApprove: false, reason: "コマンド内容を確認できないため手動確認が必要です" };
   if (ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(normalized))) {
-    return { autoApprove: false, reason: "削除、外部通信、またはpushを含むため手動確認が必要です" };
+    return { autoApprove: false, reason: "削除または外部通信を含むため手動確認が必要です" };
   }
   const matched = policy.allowedCommands.find((rule) => rule.trim() === normalized);
   return matched

@@ -116,7 +116,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Auto-approve only command lines that exactly match an entry while session Auto mode is enabled. Destructive, network, and push commands still require confirmation."
+          "description": "Auto-approve only command lines that exactly match an entry while session Auto mode is enabled. Recursive deletion and direct network commands still require confirmation."
         },
         "agentHub.autoApprove.allowedPaths": {
           "type": "array",
