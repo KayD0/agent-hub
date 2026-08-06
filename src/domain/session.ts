@@ -11,12 +11,28 @@ export type SessionStatus =
 
 export type AttentionLevel = "none" | "informational" | "action_required" | "error";
 
+const SESSION_STATUSES: readonly SessionStatus[] = [
+  "ready", "starting", "running", "waiting_for_approval", "waiting_for_input",
+  "completed", "failed", "interrupted", "disconnected",
+];
+
+const ATTENTION_LEVELS: readonly AttentionLevel[] = ["none", "informational", "action_required", "error"];
+
+export function isSessionStatus(value: unknown): value is SessionStatus {
+  return typeof value === "string" && SESSION_STATUSES.includes(value as SessionStatus);
+}
+
+export function isAttentionLevel(value: unknown): value is AttentionLevel {
+  return typeof value === "string" && ATTENTION_LEVELS.includes(value as AttentionLevel);
+}
+
 export interface InputQuestion {
   id: string;
   header: string;
   question: string;
   isOther: boolean;
   isSecret: boolean;
+  isMultiSelect: boolean;
   options: Array<{ label: string; description: string }> | null;
 }
 

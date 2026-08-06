@@ -7,8 +7,12 @@
   "engines": {
     "vscode": "^1.100.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onView:agentHub.sessions"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:agentHub.sessions"
+  ],
   "main": "./dist/src/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -36,17 +40,43 @@
       }
     ],
     "commands": [
-      { "command": "agentHub.startSession", "title": "AgentHub: 新しいCodexセッション" },
-      { "command": "agentHub.login", "title": "AgentHub: ChatGPTでログイン" },
-      { "command": "agentHub.loginDeviceCode", "title": "AgentHub: デバイスコードでログイン" },
-      { "command": "agentHub.logout", "title": "AgentHub: ログアウト" },
-      { "command": "agentHub.refresh", "title": "AgentHub: セッション一覧を更新" },
-      { "command": "agentHub.openSession", "title": "AgentHub: セッション詳細を開く" }
+      {
+        "command": "agentHub.startSession",
+        "title": "AgentHub: 新しいCodexセッション"
+      },
+      {
+        "command": "agentHub.login",
+        "title": "AgentHub: ChatGPTでログイン"
+      },
+      {
+        "command": "agentHub.loginDeviceCode",
+        "title": "AgentHub: デバイスコードでログイン"
+      },
+      {
+        "command": "agentHub.logout",
+        "title": "AgentHub: ログアウト"
+      },
+      {
+        "command": "agentHub.refresh",
+        "title": "AgentHub: セッション一覧を更新"
+      },
+      {
+        "command": "agentHub.openSession",
+        "title": "AgentHub: セッション詳細を開く"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "agentHub.startSession", "when": "view == agentHub.sessions", "group": "navigation@1" },
-        { "command": "agentHub.refresh", "when": "view == agentHub.sessions", "group": "navigation@2" }
+        {
+          "command": "agentHub.startSession",
+          "when": "view == agentHub.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentHub.refresh",
+          "when": "view == agentHub.sessions",
+          "group": "navigation@2"
+        }
       ]
     },
     "configuration": {
@@ -56,6 +86,12 @@
           "type": "string",
           "default": "codex",
           "description": "Codex CLI executable path."
+        },
+        "agentHub.codexArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Arguments inserted before app-server. Intended for test harnesses and custom launchers."
         },
         "agentHub.notifyOnActionRequired": {
           "type": "boolean",
@@ -78,12 +114,17 @@
   "scripts": {
     "compile": "tsc -p .",
     "watch": "tsc -p . -w",
-    "test": "npm run compile && node --test dist/test/**/*.test.js",
+    "test": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/session-manager.test.js dist/test/protocol-boundaries.test.js dist/test/app-server-client.test.js",
+    "test:unit": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/session-manager.test.js",
+    "test:protocol": "npm run compile && node --test dist/test/protocol-boundaries.test.js",
+    "test:app-server": "npm run compile && node --test dist/test/app-server-client.test.js",
+    "test:extension": "npm run compile && node scripts/run-extension-tests.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.100.0",
+    "@vscode/test-electron": "^3.1.0",
     "typescript": "^5.9.0"
   }
 }

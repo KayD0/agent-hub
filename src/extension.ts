@@ -19,8 +19,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(logger);
   await logger.initialize();
   const codexPath = vscode.workspace.getConfiguration("agentHub").get<string>("codexPath", "codex");
+  const codexArgs = vscode.workspace.getConfiguration("agentHub").get<string[]>("codexArgs", []);
   await logger.info("Extension activation started", { codexPath });
-  const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }));
+  const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }), codexArgs);
   const authentication = new AuthenticationManager(gateway);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState));
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);

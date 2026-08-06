@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as readline from "node:readline";
 import { AppServerEvent, AppServerRequest, CodexGateway } from "../../application/ports";
 import { AccountSnapshot, LoginStartResult } from "../../domain/authentication";
+import { decodeRpcMessage } from "./jsonl-protocol";
 
 type RequestId = number;
 
@@ -33,45 +34,51 @@ export class AppServerClient implements CodexGateway {
   public constructor(
     private readonly codexPath: string,
     private readonly log: (message: string) => void,
+    private readonly commandArgs: readonly string[] = [],
+    private readonly requestTimeoutMs = 30_000,
   ) {}
 
   public async start(): Promise<void> {
     if (this.process) return;
     this.stopping = false;
     const command = resolveCommand(this.codexPath);
-    const child = spawn(command.file, [...command.args, "app-server", "--stdio"], {
+    const child = spawn(command.file, [...command.args, ...this.commandArgs, "app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
     this.process = child;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => this.log(`[app-server] ${chunk.trimEnd()}`));
-    child.on("error", (error) => this.handleProcessFailure(`app-serverを起動できません: ${error.message}`));
+    child.on("error", (error) => this.handleProcessFailure(child, `app-serverを起動できません: ${error.message}`));
     child.on("exit", (code, signal) => {
+      if (this.process !== child) return;
       const reason = `app-serverが終了しました (code=${code ?? "null"}, signal=${signal ?? "null"})`;
-      this.process = undefined;
-      this.lineReader?.close();
-      this.lineReader = undefined;
+      this.cleanupProcess(child);
       this.rejectAll(new Error(reason));
       if (!this.stopping) this.events.emit("exit", reason);
     });
     this.lineReader = readline.createInterface({ input: child.stdout });
     this.lineReader.on("line", (line) => this.handleLine(line));
-    await this.waitForSpawn(child);
-    await this.request("initialize", {
-      clientInfo: { name: "agenthub_vscode", title: "AgentHub for Codex", version: "0.1.0" },
-    });
-    this.notify("initialized", {});
-    this.log("Codex app-serverへ接続しました。");
+    try {
+      await this.waitForSpawn(child);
+      await this.request("initialize", {
+        clientInfo: { name: "agenthub_vscode", title: "AgentHub for Codex", version: "0.1.0" },
+      });
+      this.notify("initialized", {});
+      this.log("Codex app-serverへ接続しました。");
+    } catch (error) {
+      this.cleanupProcess(child);
+      if (!child.killed) child.kill();
+      this.rejectAll(error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
   }
 
   public async stop(): Promise<void> {
     this.stopping = true;
-    this.lineReader?.close();
-    this.lineReader = undefined;
     this.rejectAll(new Error("AgentHubを終了しています。"));
     const child = this.process;
-    this.process = undefined;
+    if (child) this.cleanupProcess(child);
     if (!child || child.killed) return;
     child.stdin.end();
     child.kill();
@@ -175,8 +182,8 @@ export class AppServerClient implements CodexGateway {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`${method}が30秒以内に応答しませんでした。`));
-      }, 30_000);
+        reject(new Error(`${method}が${this.requestTimeoutMs}ミリ秒以内に応答しませんでした。`));
+      }, this.requestTimeoutMs);
       this.pending.set(id, { resolve, reject, timeout });
       this.write({ id, method, params });
     });
@@ -195,7 +202,7 @@ export class AppServerClient implements CodexGateway {
   private handleLine(line: string): void {
     let message: RpcMessage;
     try {
-      message = JSON.parse(line) as RpcMessage;
+      message = decodeRpcMessage(line);
     } catch {
       this.log(`[protocol] JSONとして解析できない行を受信しました: ${line.slice(0, 500)}`);
       return;
@@ -237,9 +244,17 @@ export class AppServerClient implements CodexGateway {
     });
   }
 
-  private handleProcessFailure(reason: string): void {
+  private handleProcessFailure(child: ChildProcessWithoutNullStreams, reason: string): void {
+    if (this.process !== child) return;
+    this.cleanupProcess(child);
     this.rejectAll(new Error(reason));
-    this.events.emit("exit", reason);
+    if (!this.stopping) this.events.emit("exit", reason);
+  }
+
+  private cleanupProcess(child: ChildProcessWithoutNullStreams): void {
+    if (this.process === child) this.process = undefined;
+    this.lineReader?.close();
+    this.lineReader = undefined;
   }
 
   private rejectAll(error: Error): void {

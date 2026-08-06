@@ -11,20 +11,34 @@ import {
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "./ports";
 
 const MAX_ACTIVITIES = 500;
+const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000];
 
 export class SessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly events = new EventEmitter();
   private started = false;
   private listenersRegistered = false;
+  private initializing?: Promise<void>;
+  private reconnectTimer?: NodeJS.Timeout;
+  private reconnectAttempt = 0;
+  private disposed = false;
+  private readonly interruptedByExit = new Set<string>();
 
   public constructor(
     private readonly gateway: CodexGateway,
     private readonly repository: SessionRepository,
+    private readonly reconnectDelaysMs: readonly number[] = RECONNECT_DELAYS_MS,
   ) {}
 
-  public async initialize(): Promise<void> {
-    if (this.started) return;
+  public initialize(): Promise<void> {
+    if (this.started) return Promise.resolve();
+    if (this.initializing) return this.initializing;
+    this.initializing = this.initializeCore().finally(() => { this.initializing = undefined; });
+    return this.initializing;
+  }
+
+  private async initializeCore(): Promise<void> {
+    this.disposed = false;
     for (const persisted of await this.repository.load()) {
       this.sessions.set(persisted.id, this.fromPersisted(persisted));
     }
@@ -38,6 +52,9 @@ export class SessionManager {
       await this.gateway.start();
       await this.restoreThreads();
       this.started = true;
+      this.reconnectAttempt = 0;
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
       this.emitChange();
     } catch (error) {
       this.started = false;
@@ -46,6 +63,9 @@ export class SessionManager {
   }
 
   public async dispose(): Promise<void> {
+    this.disposed = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     await this.gateway.stop();
   }
 
@@ -173,6 +193,20 @@ export class SessionManager {
     const session = this.requireSession(sessionId);
     const pending = session.pendingInteraction;
     if (!pending || pending.kind !== "input") throw new Error("解決可能な入力要求がありません。");
+    const expectedIds = new Set(pending.questions.map(({ id }) => id));
+    const providedIds = Object.keys(answers);
+    if (providedIds.length !== expectedIds.size || providedIds.some((id) => !expectedIds.has(id))) {
+      throw new Error("すべての質問へ回答してください。");
+    }
+    for (const question of pending.questions) {
+      const values = answers[question.id];
+      if (!values?.length || values.some((value) => typeof value !== "string" || !value.trim())) {
+        throw new Error("空の回答は送信できません。");
+      }
+      if (!question.isMultiSelect && values.length !== 1) {
+        throw new Error("単一選択の質問には1件だけ回答してください。");
+      }
+    }
     const response = Object.fromEntries(
       Object.entries(answers).map(([key, values]) => [key, { answers: values }]),
     );
@@ -198,18 +232,20 @@ export class SessionManager {
 
   private async restoreThreads(): Promise<void> {
     for (const session of this.sessions.values()) {
-      const wasReady = session.status === "ready";
+      const restoredStatus = this.interruptedByExit.has(session.id) ? "interrupted" : statusAfterResume(session.status);
       session.pendingInteraction = undefined;
       session.status = "disconnected";
       session.attention = attentionForStatus("disconnected");
       session.currentActivity = "セッション状態を復元中です";
       try {
         await this.gateway.resumeThread(session.threadId);
-        session.status = wasReady ? "ready" : "completed";
+        session.status = restoredStatus;
         session.attention = attentionForStatus(session.status);
-        session.currentActivity = wasReady ? "指示を入力できます" : "再開可能です";
+        session.currentActivity = activityAfterResume(restoredStatus);
       } catch (error) {
         session.currentActivity = `復元できません: ${errorMessage(error)}`;
+      } finally {
+        this.interruptedByExit.delete(session.id);
       }
     }
     await this.persist();
@@ -363,8 +399,10 @@ export class SessionManager {
   }
 
   private handleExit(reason: string): void {
+    this.started = false;
     for (const session of this.sessions.values()) {
       if (session.status === "running" || session.status === "starting" || session.status.startsWith("waiting_")) {
+        this.interruptedByExit.add(session.id);
         session.pendingInteraction = undefined;
         session.status = "disconnected";
         session.attention = attentionForStatus("disconnected");
@@ -374,6 +412,20 @@ export class SessionManager {
     }
     this.emitChange();
     void this.persist();
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
+    if (this.disposed || this.reconnectTimer || this.reconnectAttempt >= this.reconnectDelaysMs.length) return;
+    const delay = this.reconnectDelaysMs[this.reconnectAttempt++];
+    for (const session of this.sessions.values()) {
+      if (session.status === "disconnected") session.currentActivity = `${delay / 1_000}秒後に再接続します`;
+    }
+    this.emitChange();
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.initialize().catch(() => this.scheduleReconnect());
+    }, delay);
   }
 
   private setStatus(session: ManagedSession, status: SessionStatus, activity: string): void {
@@ -416,6 +468,21 @@ export class SessionManager {
 
 function titleFromPrompt(prompt: string): string {
   return compact(prompt.split(/\r?\n/, 1)[0].trim() || "新しいCodexセッション", 48);
+}
+
+function statusAfterResume(status: SessionStatus): SessionStatus {
+  if (status === "ready" || status === "completed" || status === "failed" || status === "interrupted" || status === "disconnected") {
+    return status;
+  }
+  return "interrupted";
+}
+
+function activityAfterResume(status: SessionStatus): string {
+  if (status === "ready") return "指示を入力できます";
+  if (status === "completed") return "完了済みのセッションを復元しました";
+  if (status === "failed") return "失敗したセッションを復元しました";
+  if (status === "disconnected") return "切断状態のセッションを復元しました";
+  return "接続を復元しました。以前の処理は中断されています";
 }
 
 function titleFromPath(cwd: string): string {
@@ -464,6 +531,7 @@ function parseQuestions(value: unknown): InputQuestion[] {
       question: optionalString(question.question) ?? "回答してください",
       isOther: question.isOther === true,
       isSecret: question.isSecret === true,
+      isMultiSelect: question.isMultiSelect === true || question.multiSelect === true,
       options,
     }];
   });
