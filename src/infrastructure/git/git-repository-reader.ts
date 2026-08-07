@@ -17,6 +17,11 @@ export class GitRepositoryReader {
     return output.trim() || undefined;
   }
 
+  public async resolveGitDirectory(rootPath: string): Promise<string> {
+    const value = (await this.git(rootPath, ["rev-parse", "--git-dir"])).trim();
+    return path.resolve(rootPath, value);
+  }
+
   public async readChanges(rootPath: string): Promise<RepositoryFileChange[]> {
     const [statusOutput, numstatOutput] = await Promise.all([
       this.git(rootPath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),

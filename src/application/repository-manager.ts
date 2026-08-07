@@ -7,8 +7,12 @@ import { GitRepositoryReader } from "../infrastructure/git/git-repository-reader
 const STORAGE_KEY = "agentHub.repositories.v1";
 const IGNORED_DIRECTORIES = new Set([".git", ".vscode-test", "node_modules", "dist", "out", "build", "coverage", "artifacts", ".next"]);
 
-export class RepositoryManager {
+export class RepositoryManager implements vscode.Disposable {
   private repositories: RegisteredRepository[];
+  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  private readonly gitWatchers = new Map<string, vscode.FileSystemWatcher>();
+  private refreshTimer?: NodeJS.Timeout;
+  public readonly onDidChange = this.changeEmitter.event;
 
   public constructor(private readonly state: vscode.Memento, private readonly reader: GitRepositoryReader) {
     const stored = state.get<unknown>(STORAGE_KEY, []);
@@ -31,7 +35,15 @@ export class RepositoryManager {
 
   public async remove(id: string): Promise<void> {
     this.repositories = this.repositories.filter((repository) => repository.id !== id);
+    this.disposeGroupWatchers(id);
     await this.persist();
+  }
+
+  public dispose(): void {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    for (const watcher of this.gitWatchers.values()) watcher.dispose();
+    this.gitWatchers.clear();
+    this.changeEmitter.dispose();
   }
 
   public async snapshot(repository: DiscoveredRepository): Promise<RepositorySnapshot> {
@@ -47,6 +59,7 @@ export class RepositoryManager {
   public async groupSnapshot(group: RegisteredRepository): Promise<RepositoryGroupSnapshot> {
     try {
       const repositories = await discoverGitRoots(group.rootPath);
+      await this.ensureGitWatchers(group.id, repositories);
       const snapshots = await Promise.all(repositories.map((rootPath) => this.snapshot({
         id: `${group.id}:${Buffer.from(rootPath.toLocaleLowerCase()).toString("base64url")}`,
         name: path.basename(rootPath), rootPath, relativePath: path.relative(group.rootPath, rootPath) || ".",
@@ -59,6 +72,36 @@ export class RepositoryManager {
 
   public async groupSnapshots(): Promise<RepositoryGroupSnapshot[]> { return Promise.all(this.repositories.map((group) => this.groupSnapshot(group))); }
   private async persist(): Promise<void> { await this.state.update(STORAGE_KEY, this.repositories); }
+
+  private async ensureGitWatchers(groupId: string, repositoryRoots: string[]): Promise<void> {
+    const desired = new Set<string>();
+    await Promise.all(repositoryRoots.map(async (rootPath) => {
+      const gitDirectory = await this.reader.resolveGitDirectory(rootPath);
+      const key = `${groupId}:${gitDirectory.toLocaleLowerCase()}`;
+      desired.add(key);
+      if (this.gitWatchers.has(key)) return;
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(gitDirectory, "{HEAD,packed-refs,refs/**}"));
+      const notify = (): void => this.scheduleChange();
+      watcher.onDidCreate(notify);
+      watcher.onDidChange(notify);
+      watcher.onDidDelete(notify);
+      this.gitWatchers.set(key, watcher);
+    }));
+    for (const [key, watcher] of this.gitWatchers) {
+      if (key.startsWith(`${groupId}:`) && !desired.has(key)) { watcher.dispose(); this.gitWatchers.delete(key); }
+    }
+  }
+
+  private disposeGroupWatchers(groupId: string): void {
+    for (const [key, watcher] of this.gitWatchers) {
+      if (key.startsWith(`${groupId}:`)) { watcher.dispose(); this.gitWatchers.delete(key); }
+    }
+  }
+
+  private scheduleChange(): void {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => { this.refreshTimer = undefined; this.changeEmitter.fire(); }, 350);
+  }
 }
 
 async function discoverGitRoots(rootPath: string): Promise<string[]> {

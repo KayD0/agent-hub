@@ -51,6 +51,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     sessionsView,
     detailPanel,
     repositoryDiffPanel,
+    repositoryManager,
     { dispose: () => void manager?.dispose() },
   );
 
@@ -74,6 +75,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.refreshRepositories", () => repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.removeRepository", async (repositoryId: string) => { await repositoryManager.remove(repositoryId); await repositoriesView.refresh(); }),
   );
+
+  context.subscriptions.push(repositoryManager.onDidChange(() => {
+    void Promise.all([repositoriesView.refresh(), repositoryDiffPanel.refresh()]).catch(showError);
+  }));
 
   const changeSubscription = manager.onDidChange(() => void notifyForChanges(manager!));
   context.subscriptions.push(changeSubscription);

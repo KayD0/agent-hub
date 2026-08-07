@@ -37,6 +37,10 @@ export class RepositoryDiffPanel implements vscode.Disposable {
     this.selectedPaths.clear();
   }
 
+  public async refresh(): Promise<void> {
+    await Promise.all([...this.panels].map(([repositoryId, panel]) => this.render(repositoryId, panel)));
+  }
+
   private async handleMessage(repositoryId: string, value: unknown): Promise<void> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     const message = value as { type?: unknown; path?: unknown };
