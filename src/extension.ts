@@ -34,7 +34,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
-  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), showError);
+  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
     const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "リポジトリグループを登録" });
@@ -55,7 +55,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath));
     if (session) detailPanel.show(session.id);
   };
-  repositoriesView = new RepositoryWebviewProvider(repositoryManager, async () => { await addRepository(); }, (repositoryId) => repositoryDiffPanel.show(repositoryId), createGroupSession, showError);
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), createGroupSession, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
@@ -88,6 +88,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(repositoryManager.onDidChange(() => {
+    sessionsView.refresh(true);
     void Promise.all([repositoriesView.refresh(), repositoryDiffPanel.refresh()]).catch(showError);
   }));
 
