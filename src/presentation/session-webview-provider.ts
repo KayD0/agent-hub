@@ -73,7 +73,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
       id,
       title,
       status,
-      currentActivity: status === "starting" || status === "running" ? "Codexが処理中…" : currentActivity,
+      currentActivity: status === "starting" || status === "running" ? "処理中" : currentActivity,
       finalResult,
       autoApprove,
       pendingInteraction,
