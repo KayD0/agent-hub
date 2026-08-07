@@ -153,7 +153,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Auto-approve only command lines that exactly match an entry while session Auto mode is enabled. Recursive deletion and direct network commands still require confirmation."
+          "description": "Auto-approve command lines that exactly match an entry while session Auto mode is enabled. A single Git command wrapped by PowerShell -Command is matched against its inner command. Compound, destructive, and direct network commands still require confirmation."
         },
         "agentHub.autoApprove.allowedPaths": {
           "type": "array",

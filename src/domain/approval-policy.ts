@@ -41,13 +41,39 @@ export function evaluateAutoApproval(
 function evaluateCommand(policy: AutoApprovalPolicy, command: string | undefined): ApprovalPolicyResult {
   const normalized = command?.trim();
   if (!normalized) return { autoApprove: false, reason: "コマンド内容を確認できないため手動確認が必要です" };
-  if (ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(normalized))) {
+  const wrapped = unwrapPowerShellGitCommand(normalized);
+  if (wrapped.recognized && !wrapped.command) {
+    return { autoApprove: false, reason: "PowerShell内の単一Gitコマンドを安全に確認できないため手動確認が必要です" };
+  }
+  const commandsToInspect = wrapped.command ? [normalized, wrapped.command] : [normalized];
+  if (commandsToInspect.some((value) => ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(value)))) {
     return { autoApprove: false, reason: "削除または外部通信を含むため手動確認が必要です" };
   }
-  const matched = policy.allowedCommands.find((rule) => rule.trim() === normalized);
+  const effectiveCommand = wrapped.command ?? normalized;
+  const matched = policy.allowedCommands.find((rule) => rule.trim() === effectiveCommand);
   return matched
-    ? { autoApprove: true, reason: "登録済みコマンドと完全一致しました", matchedRule: `command:${matched}` }
+    ? { autoApprove: true, reason: wrapped.command ? "PowerShell内のGitコマンドが登録済みコマンドと完全一致しました" : "登録済みコマンドと完全一致しました", matchedRule: `command:${matched}` }
     : { autoApprove: false, reason: "登録済みコマンドと一致しません" };
+}
+
+function unwrapPowerShellGitCommand(value: string): { recognized: boolean; command?: string } {
+  const executableMatch = value.match(/^(?:"([^"]+)"|'([^']+)'|(\S+))\s+([\s\S]+)$/);
+  if (!executableMatch) return { recognized: false };
+  const executable = (executableMatch[1] ?? executableMatch[2] ?? executableMatch[3]).replace(/\\/g, "/").split("/").pop()?.toLocaleLowerCase();
+  if (!executable || !["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executable)) return { recognized: false };
+  const commandMatch = executableMatch[4].match(/^([\s\S]*?)(?:^|\s)-(?:command|c)\s+([\s\S]+)$/i);
+  if (!commandMatch || !safePowerShellOptions(commandMatch[1])) return { recognized: true };
+  let inner = commandMatch[2].trim();
+  if ((inner.startsWith("'") && inner.endsWith("'")) || (inner.startsWith('"') && inner.endsWith('"'))) inner = inner.slice(1, -1).trim();
+  if (!/^git(?:\.exe)?(?:\s|$)/i.test(inner)) return { recognized: true };
+  if (/[;|&<>`\r\n]/.test(inner) || /\$\(|\$\{|\$[A-Za-z_]/.test(inner)) return { recognized: true };
+  return { recognized: true, command: inner };
+}
+
+function safePowerShellOptions(value: string): boolean {
+  const options = value.trim();
+  if (!options) return true;
+  return /^(?:(?:-(?:NoProfile|NonInteractive|NoLogo|NoExit))\s*|(?:-ExecutionPolicy\s+(?:Restricted|AllSigned|RemoteSigned|Unrestricted|Bypass|Undefined))\s*)+$/i.test(options);
 }
 
 function evaluateFileChange(

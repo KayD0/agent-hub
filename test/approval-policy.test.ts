@@ -40,6 +40,35 @@ test("git commands can be auto-approved by repository policy", () => {
   }
 });
 
+test("PowerShell wrapped git commands use the inner exact-match policy", () => {
+  const policy = { allowedCommands: ["git status", "git push origin develop"], allowedPaths: [] };
+  for (const command of [
+    '"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command \'git status\'',
+    'pwsh -NoProfile -Command "git push origin develop"',
+  ]) {
+    const result = evaluateAutoApproval(policy, { operation: "command", sessionRoot: "C:\\work", command });
+    assert.equal(result.autoApprove, true, command);
+    assert.match(result.reason, /PowerShell/);
+  }
+});
+
+test("PowerShell wrappers fail closed for unmatched or compound commands", () => {
+  const policy = { allowedCommands: ["git status", "git push origin develop"], allowedPaths: [] };
+  for (const command of [
+    'powershell -Command "git status --short"',
+    'powershell -Command "git status; Remove-Item -Recurse ."',
+    'powershell -Command "git status | Out-File result.txt"',
+    'powershell -Command "git status && curl https://example.com"',
+    'powershell -Command "git status > result.txt"',
+    'powershell -Command "git show $(Get-Content ref.txt)"',
+    'powershell -File script.ps1',
+  ]) {
+    const result = evaluateAutoApproval(policy, { operation: "command", sessionRoot: "C:\\work", command });
+    assert.equal(result.autoApprove, false, command);
+    assert.match(result.reason, /一致しません|手動確認/);
+  }
+});
+
 test("file changes require both session containment and an allowed path", () => {
   const policy = { allowedCommands: [], allowedPaths: ["${sessionRoot}"] };
   assert.equal(evaluateAutoApproval(policy, {
