@@ -51,15 +51,20 @@
       },
       {
         "command": "agentHub.login",
-        "title": "AgentHub: ChatGPTでログイン"
+        "title": "ChatGPT: ログイン"
       },
       {
         "command": "agentHub.loginDeviceCode",
         "title": "AgentHub: デバイスコードでログイン"
       },
       {
+        "command": "agentHub.cancelLogin",
+        "title": "AgentHub: ログインをキャンセル",
+        "icon": "$(close)"
+      },
+      {
         "command": "agentHub.logout",
-        "title": "AgentHub: ログアウト"
+        "title": "ChatGPT: ログアウト"
       },
       {
         "command": "agentHub.refresh",
@@ -71,7 +76,7 @@
       },
       {
         "command": "agentHub.addRepository",
-        "title": "AgentHub: リポジトリグループを登録"
+        "title": "AgentHub: フォルダを登録"
       },
       {
         "command": "agentHub.openRepositoryChanges",
@@ -85,14 +90,19 @@
     "menus": {
       "view/title": [
         {
-          "command": "agentHub.startSession",
-          "when": "view == agentHub.sessions",
+          "command": "agentHub.login",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus != authenticated && agentHub.authenticationStatus != logging_in",
           "group": "navigation@1"
         },
         {
-          "command": "agentHub.refresh",
-          "when": "view == agentHub.sessions",
-          "group": "navigation@2"
+          "command": "agentHub.logout",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentHub.cancelLogin",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == logging_in",
+          "group": "navigation@1"
         },
         {
           "command": "agentHub.addRepository",

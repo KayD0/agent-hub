@@ -11,6 +11,7 @@ export class RepositoryManager implements vscode.Disposable {
   private repositories: RegisteredRepository[];
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   private readonly gitWatchers = new Map<string, vscode.FileSystemWatcher>();
+  private readonly worktreeWatchers = new Map<string, vscode.FileSystemWatcher>();
   private refreshTimer?: NodeJS.Timeout;
   public readonly onDidChange = this.changeEmitter.event;
 
@@ -43,6 +44,8 @@ export class RepositoryManager implements vscode.Disposable {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     for (const watcher of this.gitWatchers.values()) watcher.dispose();
     this.gitWatchers.clear();
+    for (const watcher of this.worktreeWatchers.values()) watcher.dispose();
+    this.worktreeWatchers.clear();
     this.changeEmitter.dispose();
   }
 
@@ -79,22 +82,42 @@ export class RepositoryManager implements vscode.Disposable {
       const gitDirectory = await this.reader.resolveGitDirectory(rootPath);
       const key = `${groupId}:${gitDirectory.toLocaleLowerCase()}`;
       desired.add(key);
-      if (this.gitWatchers.has(key)) return;
-      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(gitDirectory, "{HEAD,packed-refs,refs/**}"));
-      const notify = (): void => this.scheduleChange();
-      watcher.onDidCreate(notify);
-      watcher.onDidChange(notify);
-      watcher.onDidDelete(notify);
-      this.gitWatchers.set(key, watcher);
+      if (!this.gitWatchers.has(key)) {
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(gitDirectory, "{HEAD,index,packed-refs,refs/**}"));
+        const notify = (): void => this.scheduleChange();
+        watcher.onDidCreate(notify);
+        watcher.onDidChange(notify);
+        watcher.onDidDelete(notify);
+        this.gitWatchers.set(key, watcher);
+      }
+      const worktreeKey = `${groupId}:${rootPath.toLocaleLowerCase()}`;
+      if (!this.worktreeWatchers.has(worktreeKey)) {
+        const worktreeWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(rootPath, "**/*"));
+        const notifyWorktree = (uri: vscode.Uri): void => {
+          const relative = path.relative(rootPath, uri.fsPath);
+          if (!relative.split(path.sep).some((segment) => IGNORED_DIRECTORIES.has(segment))) this.scheduleChange();
+        };
+        worktreeWatcher.onDidCreate(notifyWorktree);
+        worktreeWatcher.onDidChange(notifyWorktree);
+        worktreeWatcher.onDidDelete(notifyWorktree);
+        this.worktreeWatchers.set(worktreeKey, worktreeWatcher);
+      }
     }));
     for (const [key, watcher] of this.gitWatchers) {
       if (key.startsWith(`${groupId}:`) && !desired.has(key)) { watcher.dispose(); this.gitWatchers.delete(key); }
+    }
+    const desiredWorktrees = new Set(repositoryRoots.map((rootPath) => `${groupId}:${rootPath.toLocaleLowerCase()}`));
+    for (const [key, watcher] of this.worktreeWatchers) {
+      if (key.startsWith(`${groupId}:`) && !desiredWorktrees.has(key)) { watcher.dispose(); this.worktreeWatchers.delete(key); }
     }
   }
 
   private disposeGroupWatchers(groupId: string): void {
     for (const [key, watcher] of this.gitWatchers) {
       if (key.startsWith(`${groupId}:`)) { watcher.dispose(); this.gitWatchers.delete(key); }
+    }
+    for (const [key, watcher] of this.worktreeWatchers) {
+      if (key.startsWith(`${groupId}:`)) { watcher.dispose(); this.worktreeWatchers.delete(key); }
     }
   }
 
