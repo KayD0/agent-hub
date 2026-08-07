@@ -189,6 +189,26 @@ test("auto mode keeps unmatched commands pending for manual review", async () =>
   if (pending?.kind === "approval") assert.match(pending.policyReason, /一致しません/);
 });
 
+test("auto mode audits the matched command inside a PowerShell wrapper", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository(), undefined, { allowedCommands: ["git status"], allowedPaths: [] });
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Inspect repository");
+  manager.setAutoApprove(session.id, true);
+
+  gateway.emitRequest({
+    id: 48,
+    method: "item/commandExecution/requestApproval",
+    params: { threadId: session.threadId, command: 'pwsh -NoProfile -Command "git status"' },
+  });
+
+  assert.deepEqual(gateway.responses, [{ id: 48, result: { decision: "acceptForSession" } }]);
+  const audit = manager.get(session.id)?.approvalAudit[0];
+  assert.equal(audit?.subject, "git status");
+  assert.equal(audit?.matchedRule, "command:git status");
+  assert.match(audit?.reason ?? "", /git status/);
+});
+
 test("auto mode does not answer user input requests", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());

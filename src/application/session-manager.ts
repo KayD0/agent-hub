@@ -304,7 +304,7 @@ export class SessionManager {
       };
       this.appendActivity(session, "command", "承認待ち", command ?? reason);
       if (session.autoApprove && policyResult.autoApprove) {
-        this.resolveAutoApproval(session, session.pendingInteraction);
+        this.resolveAutoApproval(session, session.pendingInteraction, policyResult.matchedCommand);
         return;
       }
       this.setStatus(session, "waiting_for_approval", command ?? reason ?? "コマンド実行の承認が必要です");
@@ -482,12 +482,16 @@ export class SessionManager {
     if (session.activities.length > MAX_ACTIVITIES) session.activities.splice(0, session.activities.length - MAX_ACTIVITIES);
   }
 
-  private resolveAutoApproval(session: ManagedSession, pending: Extract<NonNullable<ManagedSession["pendingInteraction"]>, { kind: "approval" }>): void {
+  private resolveAutoApproval(
+    session: ManagedSession,
+    pending: Extract<NonNullable<ManagedSession["pendingInteraction"]>, { kind: "approval" }>,
+    matchedCommand?: string,
+  ): void {
     this.gateway.respond(pending.requestId, { decision: pending.allowForSession ? "acceptForSession" : "accept" });
     this.appendApprovalAudit(session, {
       timestamp: Date.now(),
       operation: pending.method === "item/commandExecution/requestApproval" ? "command" : "file_change",
-      subject: pending.command ?? pending.targetPath ?? pending.description,
+      subject: matchedCommand ?? pending.command ?? pending.targetPath ?? pending.description,
       decision: "auto_approved",
       reason: pending.policyReason,
       matchedRule: pending.matchedRule,

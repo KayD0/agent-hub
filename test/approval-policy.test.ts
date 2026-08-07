@@ -49,6 +49,8 @@ test("PowerShell wrapped git commands use the inner exact-match policy", () => {
     const result = evaluateAutoApproval(policy, { operation: "command", sessionRoot: "C:\\work", command });
     assert.equal(result.autoApprove, true, command);
     assert.match(result.reason, /PowerShell/);
+    assert.equal(result.matchedCommand, command.includes("status") ? "git status" : "git push origin develop");
+    assert.match(result.reason, new RegExp(result.matchedCommand!));
   }
 });
 
@@ -61,6 +63,10 @@ test("PowerShell wrappers fail closed for unmatched or compound commands", () =>
     'powershell -Command "git status && curl https://example.com"',
     'powershell -Command "git status > result.txt"',
     'powershell -Command "git show $(Get-Content ref.txt)"',
+    'powershell -Command "git show $?"',
+    'powershell -Command "git show $_"',
+    'powershell -Command "git show $1"',
+    'powershell -Command "git status `n"',
     'powershell -File script.ps1',
   ]) {
     const result = evaluateAutoApproval(policy, { operation: "command", sessionRoot: "C:\\work", command });

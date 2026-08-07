@@ -18,6 +18,7 @@ export interface ApprovalPolicyResult {
   autoApprove: boolean;
   reason: string;
   matchedRule?: string;
+  matchedCommand?: string;
 }
 
 const ALWAYS_CONFIRM_COMMANDS: readonly RegExp[] = [
@@ -41,18 +42,25 @@ export function evaluateAutoApproval(
 function evaluateCommand(policy: AutoApprovalPolicy, command: string | undefined): ApprovalPolicyResult {
   const normalized = command?.trim();
   if (!normalized) return { autoApprove: false, reason: "コマンド内容を確認できないため手動確認が必要です" };
+  if (ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(normalized))) {
+    return { autoApprove: false, reason: "削除または外部通信を含むため手動確認が必要です" };
+  }
   const wrapped = unwrapPowerShellGitCommand(normalized);
   if (wrapped.recognized && !wrapped.command) {
     return { autoApprove: false, reason: "PowerShell内の単一Gitコマンドを安全に確認できないため手動確認が必要です" };
   }
-  const commandsToInspect = wrapped.command ? [normalized, wrapped.command] : [normalized];
-  if (commandsToInspect.some((value) => ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(value)))) {
+  if (wrapped.command && ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(wrapped.command!))) {
     return { autoApprove: false, reason: "削除または外部通信を含むため手動確認が必要です" };
   }
   const effectiveCommand = wrapped.command ?? normalized;
   const matched = policy.allowedCommands.find((rule) => rule.trim() === effectiveCommand);
   return matched
-    ? { autoApprove: true, reason: wrapped.command ? "PowerShell内のGitコマンドが登録済みコマンドと完全一致しました" : "登録済みコマンドと完全一致しました", matchedRule: `command:${matched}` }
+    ? {
+        autoApprove: true,
+        reason: wrapped.command ? `PowerShell内のGitコマンド「${effectiveCommand}」が登録済みコマンドと完全一致しました` : "登録済みコマンドと完全一致しました",
+        matchedRule: `command:${matched}`,
+        matchedCommand: wrapped.command,
+      }
     : { autoApprove: false, reason: "登録済みコマンドと一致しません" };
 }
 
@@ -66,7 +74,7 @@ function unwrapPowerShellGitCommand(value: string): { recognized: boolean; comma
   let inner = commandMatch[2].trim();
   if ((inner.startsWith("'") && inner.endsWith("'")) || (inner.startsWith('"') && inner.endsWith('"'))) inner = inner.slice(1, -1).trim();
   if (!/^git(?:\.exe)?(?:\s|$)/i.test(inner)) return { recognized: true };
-  if (/[;|&<>`\r\n]/.test(inner) || /\$\(|\$\{|\$[A-Za-z_]/.test(inner)) return { recognized: true };
+  if (/[;|&<>`$\r\n]/.test(inner)) return { recognized: true };
   return { recognized: true, command: inner };
 }
 
