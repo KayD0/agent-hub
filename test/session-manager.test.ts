@@ -171,7 +171,7 @@ test("auto mode keeps unmatched commands pending for manual review", async () =>
   assert.equal(manager.get(session.id)?.status, "waiting_for_approval");
   const pending = manager.get(session.id)?.pendingInteraction;
   assert.equal(pending?.kind, "approval");
-  if (pending?.kind === "approval") assert.match(pending.policyReason, /手動確認/);
+  if (pending?.kind === "approval") assert.match(pending.policyReason, /一致しません/);
 });
 
 test("auto mode does not answer user input requests", async () => {
@@ -290,6 +290,22 @@ test("completed agent message is retained as the final result", async () => {
   assert.equal(manager.get(session.id)?.finalResult, "Finished successfully.");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(repository.value[0]?.finalResult, "Finished successfully.");
+});
+
+test("reasoning and user message items are hidden from user-facing activity", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  const session = await manager.createSession("C:\\work", "Do work");
+  const activityCount = session.activities.length;
+  const currentActivity = session.currentActivity;
+
+  for (const type of ["reasoning", "userMessage"]) {
+    gateway.emitEvent({ method: "item/started", params: { threadId: session.threadId, item: { type } } });
+    gateway.emitEvent({ method: "item/completed", params: { threadId: session.threadId, item: { type } } });
+  }
+
+  assert.equal(session.activities.length, activityCount);
+  assert.equal(session.currentActivity, currentActivity);
 });
 
 test("session order remains stable and can be persisted after reordering", async () => {

@@ -412,6 +412,7 @@ export class SessionManager {
     const item = objectValue(value);
     if (!item) return;
     const type = optionalString(item.type) ?? "item";
+    if (type === "reasoning" || type === "userMessage") return;
     if (type === "agentMessage") {
       const text = optionalString(item.text) ?? "";
       this.appendActivity(session, "message", completed ? "Codex" : "メッセージ生成中", text);

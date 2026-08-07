@@ -16,8 +16,8 @@ test("command auto approval requires an exact configured match", () => {
   }).autoApprove, false);
 });
 
-test("sensitive commands always require confirmation even when configured", () => {
-  for (const command of ["git push origin main", "curl https://example.com", "git reset --hard"]) {
+test("deletion and direct network commands always require confirmation even when configured", () => {
+  for (const command of ["Remove-Item -Recurse C:\\work\\build", "curl https://example.com"]) {
     const result = evaluateAutoApproval({ allowedCommands: [command], allowedPaths: [] }, {
       operation: "command",
       sessionRoot: "C:\\work",
@@ -25,6 +25,18 @@ test("sensitive commands always require confirmation even when configured", () =
     });
     assert.equal(result.autoApprove, false, command);
     assert.match(result.reason, /手動確認/);
+  }
+});
+
+test("git commands can be auto-approved by repository policy", () => {
+  for (const command of ["git push origin main", "git reset --hard"]) {
+    const result = evaluateAutoApproval({ allowedCommands: [command], allowedPaths: [] }, {
+      operation: "command",
+      sessionRoot: "C:\\work",
+      command,
+    });
+    assert.equal(result.autoApprove, true, command);
+    assert.equal(result.matchedRule, `command:${command}`);
   }
 });
 
