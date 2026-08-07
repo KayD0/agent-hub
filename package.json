@@ -51,15 +51,22 @@
       },
       {
         "command": "agentHub.login",
-        "title": "AgentHub: ChatGPTでログイン"
+        "title": "AgentHub: ChatGPTでログイン",
+        "icon": "$(account)"
       },
       {
         "command": "agentHub.loginDeviceCode",
         "title": "AgentHub: デバイスコードでログイン"
       },
       {
+        "command": "agentHub.cancelLogin",
+        "title": "AgentHub: ログインをキャンセル",
+        "icon": "$(close)"
+      },
+      {
         "command": "agentHub.logout",
-        "title": "AgentHub: ログアウト"
+        "title": "AgentHub: ログアウト",
+        "icon": "$(sign-out)"
       },
       {
         "command": "agentHub.refresh",
@@ -92,6 +99,21 @@
         {
           "command": "agentHub.refresh",
           "when": "view == agentHub.sessions",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agentHub.login",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus != authenticated && agentHub.authenticationStatus != logging_in",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentHub.logout",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agentHub.cancelLogin",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == logging_in",
           "group": "navigation@2"
         },
         {

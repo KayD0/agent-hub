@@ -78,6 +78,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("agentHub.login", () => startBrowserLogin(authentication)),
     vscode.commands.registerCommand("agentHub.loginDeviceCode", () => startDeviceCodeLogin(authentication)),
+    vscode.commands.registerCommand("agentHub.cancelLogin", () => authentication.cancelLogin()),
     vscode.commands.registerCommand("agentHub.logout", () => authentication.logout()),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh(true)),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
