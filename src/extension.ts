@@ -37,7 +37,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
-    const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "リポジトリグループを登録" });
+    const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "フォルダを登録" });
     if (!selected?.[0]) return undefined;
     const repository = await repositoryManager.register(selected[0].fsPath);
     await repositoriesView.refresh();

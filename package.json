@@ -71,7 +71,7 @@
       },
       {
         "command": "agentHub.addRepository",
-        "title": "AgentHub: リポジトリグループを登録"
+        "title": "AgentHub: フォルダを登録"
       },
       {
         "command": "agentHub.openRepositoryChanges",
