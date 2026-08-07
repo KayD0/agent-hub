@@ -30,6 +30,11 @@
           "id": "agentHub.sessions",
           "name": "Codex Sessions",
           "type": "webview"
+        },
+        {
+          "id": "agentHub.repositories",
+          "name": "Repository Groups",
+          "type": "webview"
         }
       ]
     },
@@ -63,6 +68,18 @@
       {
         "command": "agentHub.openSession",
         "title": "AgentHub: セッション詳細を開く"
+      },
+      {
+        "command": "agentHub.addRepository",
+        "title": "AgentHub: リポジトリグループを登録"
+      },
+      {
+        "command": "agentHub.openRepositoryChanges",
+        "title": "AgentHub: グループ差分を開く"
+      },
+      {
+        "command": "agentHub.refreshRepositories",
+        "title": "AgentHub: リポジトリ差分を更新"
       }
     ],
     "menus": {
@@ -75,6 +92,16 @@
         {
           "command": "agentHub.refresh",
           "when": "view == agentHub.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentHub.addRepository",
+          "when": "view == agentHub.repositories",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentHub.refreshRepositories",
+          "when": "view == agentHub.repositories",
           "group": "navigation@2"
         }
       ]
@@ -132,8 +159,8 @@
   "scripts": {
     "compile": "tsc -p .",
     "watch": "tsc -p . -w",
-    "test": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/protocol-boundaries.test.js dist/test/app-server-client.test.js dist/test/markdown-renderer.test.js",
-    "test:unit": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/markdown-renderer.test.js",
+    "test": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/protocol-boundaries.test.js dist/test/app-server-client.test.js dist/test/markdown-renderer.test.js dist/test/git-repository-reader.test.js",
+    "test:unit": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/markdown-renderer.test.js dist/test/git-repository-reader.test.js",
     "test:protocol": "npm run compile && node --test dist/test/protocol-boundaries.test.js",
     "test:app-server": "npm run compile && node --test dist/test/app-server-client.test.js",
     "test:extension": "npm run compile && node scripts/run-extension-tests.js",

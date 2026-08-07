@@ -3,12 +3,16 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { AuthenticationManager } from "./application/authentication-manager";
 import { SessionManager } from "./application/session-manager";
+import { RepositoryManager } from "./application/repository-manager";
 import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
+import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
 import { SessionDetailPanel } from "./presentation/session-detail-panel";
 import { SessionWebviewProvider } from "./presentation/session-webview-provider";
+import { RepositoryDiffPanel } from "./presentation/repository-diff-panel";
+import { RepositoryWebviewProvider } from "./presentation/repository-webview-provider";
 
 let manager: SessionManager | undefined;
 let logger: FileLogger | undefined;
@@ -25,13 +29,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await logger.info("Extension activation started", { codexPath });
   const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }), codexArgs);
   const authentication = new AuthenticationManager(gateway);
+  const gitReader = new GitRepositoryReader();
+  const repositoryManager = new RepositoryManager(context.globalState, gitReader);
+  const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
-  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), showError);
+  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), showError);
+  let repositoriesView: RepositoryWebviewProvider;
+  const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
+    const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "リポジトリグループを登録" });
+    if (!selected?.[0]) return undefined;
+    const repository = await repositoryManager.register(selected[0].fsPath);
+    await repositoriesView.refresh();
+    await repositoryDiffPanel.show(repository.id);
+    return repository.id;
+  };
+  const createGroupSession = async (repositoryId: string): Promise<void> => {
+    if (!authentication.isAuthenticated()) {
+      const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
+      if (action) await vscode.commands.executeCommand("agentHub.login");
+      return;
+    }
+    const group = repositoryManager.get(repositoryId);
+    if (!group) throw new Error("登録済みフォルダが見つかりません。");
+    const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath));
+    if (session) detailPanel.show(session.id);
+  };
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), createGroupSession, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
+    vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
     sessionsView,
     detailPanel,
+    repositoryDiffPanel,
+    repositoryManager,
     { dispose: () => void manager?.dispose() },
   );
 
@@ -50,7 +81,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.logout", () => authentication.logout()),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh(true)),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
+    vscode.commands.registerCommand("agentHub.addRepository", (candidate?: vscode.Uri) => addRepository(candidate)),
+    vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),
+    vscode.commands.registerCommand("agentHub.refreshRepositories", () => repositoriesView.refresh()),
+    vscode.commands.registerCommand("agentHub.removeRepository", async (repositoryId: string) => { await repositoryManager.remove(repositoryId); await repositoriesView.refresh(); }),
   );
+
+  context.subscriptions.push(repositoryManager.onDidChange(() => {
+    sessionsView.refresh(true);
+    void Promise.all([repositoriesView.refresh(), repositoryDiffPanel.refresh()]).catch(showError);
+  }));
 
   const changeSubscription = manager.onDidChange(() => void notifyForChanges(manager!));
   context.subscriptions.push(changeSubscription);
@@ -98,11 +138,12 @@ export async function deactivate(): Promise<void> {
 async function startSession(
   context: vscode.ExtensionContext,
   sessionManager: SessionManager,
+  selectedFolder?: vscode.Uri,
 ): Promise<ReturnType<SessionManager["get"]>> {
   await logger?.info("Start session command invoked");
   try {
-    await logger?.info("Opening folder selector");
-    const folder = await selectFolder(context);
+    if (!selectedFolder) await logger?.info("Opening folder selector");
+    const folder = selectedFolder ?? await selectFolder(context);
     if (!folder) {
       await logger?.info("Start session cancelled at folder selector");
       return;
