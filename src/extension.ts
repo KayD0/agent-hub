@@ -13,6 +13,8 @@ import { SessionDetailPanel } from "./presentation/session-detail-panel";
 import { SessionWebviewProvider } from "./presentation/session-webview-provider";
 import { RepositoryDiffPanel } from "./presentation/repository-diff-panel";
 import { RepositoryWebviewProvider } from "./presentation/repository-webview-provider";
+import { GitHubIssueClient } from "./infrastructure/github/github-issue-client";
+import { GitHubIssuesPanel } from "./presentation/github-issues-panel";
 
 let manager: SessionManager | undefined;
 let logger: FileLogger | undefined;
@@ -32,6 +34,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const gitReader = new GitRepositoryReader();
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, showError);
+  const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, new GitHubIssueClient(), async (issue) => {
+    if (!authentication.isAuthenticated()) {
+      const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
+      if (action) await vscode.commands.executeCommand("agentHub.login");
+      return;
+    }
+    const issueBody = issue.body.length > 20_000 ? `${issue.body.slice(0, 20_000)}\n\n（本文は20,000文字で省略されました）` : issue.body;
+    const prompt = `GitHub Issue #${issue.number} に対応してください。\n\nタイトル: ${issue.title}\nURL: ${issue.url}\n\n本文:\n${issueBody || "（本文なし）"}`;
+    const session = await startSession(context, manager!, vscode.Uri.file(issue.repository.rootPath), prompt);
+    if (session) detailPanel.show(session.id);
+  }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), showError);
@@ -55,13 +68,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath));
     if (session) detailPanel.show(session.id);
   };
-  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), createGroupSession, showError);
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), createGroupSession, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
     sessionsView,
     detailPanel,
     repositoryDiffPanel,
+    githubIssuesPanel,
     repositoryManager,
     { dispose: () => void manager?.dispose() },
   );
@@ -84,6 +98,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
     vscode.commands.registerCommand("agentHub.addRepository", (candidate?: vscode.Uri) => addRepository(candidate)),
     vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),
+    vscode.commands.registerCommand("agentHub.openRepositoryIssues", (repositoryId?: string) => repositoryId ? githubIssuesPanel.show(repositoryId) : repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.refreshRepositories", () => repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.removeRepository", async (repositoryId: string) => { await repositoryManager.remove(repositoryId); await repositoriesView.refresh(); }),
   );
@@ -140,6 +155,7 @@ async function startSession(
   context: vscode.ExtensionContext,
   sessionManager: SessionManager,
   selectedFolder?: vscode.Uri,
+  initialPrompt?: string,
 ): Promise<ReturnType<SessionManager["get"]>> {
   await logger?.info("Start session command invoked");
   try {
@@ -153,7 +169,7 @@ async function startSession(
     await logger?.info("Session creation started", { cwd: folder.fsPath });
     const session = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Codexセッションを開始しています" },
-      () => sessionManager.createSession(folder.fsPath),
+      () => sessionManager.createSession(folder.fsPath, initialPrompt),
     );
     await logger?.info("Session creation completed", { cwd: folder.fsPath });
     await rememberFolder(context, folder);
