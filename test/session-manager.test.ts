@@ -106,6 +106,21 @@ test("restoring sessions preserves terminal states and interrupts active work", 
   assert.match(manager.get("running")?.currentActivity ?? "", /中断/);
 });
 
+test("restoring a session preserves its final result", async () => {
+  const repository = new MemoryRepository();
+  repository.value = [{
+    ...persistedSession("completed", "Completed", 1, "completed"),
+    finalResult: "Implemented the requested change and all tests passed.",
+  }];
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, repository);
+
+  await manager.initialize();
+
+  assert.equal(manager.get("completed")?.finalResult, "Implemented the requested change and all tests passed.");
+  assert.equal(repository.value[0]?.finalResult, "Implemented the requested change and all tests passed.");
+});
+
 test("approval request moves session to action required and resolves once", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());

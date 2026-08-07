@@ -7,6 +7,7 @@ import { RepositoryManager } from "./application/repository-manager";
 import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
+import { RepositoryFileReader } from "./infrastructure/filesystem/repository-file-reader";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
 import { SessionDetailPanel } from "./presentation/session-detail-panel";
@@ -33,7 +34,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const authentication = new AuthenticationManager(gateway);
   const gitReader = new GitRepositoryReader();
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
-  const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, showError);
+  const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, new RepositoryFileReader(), showError);
   const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, new GitHubIssueClient(), async (issue) => {
     if (!authentication.isAuthenticated()) {
       const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");

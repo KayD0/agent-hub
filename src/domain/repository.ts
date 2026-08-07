@@ -39,3 +39,9 @@ export interface RepositoryGroupSnapshot extends RegisteredRepository {
   deletions: number;
   error?: string;
 }
+
+export interface RepositoryTreeEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+}
