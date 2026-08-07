@@ -38,6 +38,14 @@ Codexとの通信には`codex app-server`のstdio JSONLプロトコルを使用�
 
 差分画面は読み取り専用です。checkout、reset、clean、mergeなど、作業ツリーを変更するGit操作は実行しません。
 
+### GitHub Issue連携
+
+- 登録フォルダ配下のGitHubリポジトリからOpen Issueを取得
+- Issue番号、タイトル、ラベル、担当者、更新日時、本文を表示
+- IssueをGitHubで開く
+- Issue番号、タイトル、URL、本文を初期指示としてCodexセッションを開始
+- GitHub CLI（`gh`）の既存認証を利用し、AgentHub自身はトークンを保存しない
+
 ### 承認と入力
 
 - コマンド実行とファイル変更の承認・拒否
@@ -72,6 +80,7 @@ Codexとの通信には`codex app-server`のstdio JSONLプロトコルを使用�
 - npm
 - Codex CLI
 - Git（リポジトリ差分機能を利用する場合）
+- GitHub CLI（Issue連携を利用する場合）
 
 既定ではPATH上の`codex`を使用します。必要な場合はVS Code設定の`agentHub.codexPath`へ実行ファイルのパスを指定してください。
 
@@ -125,7 +134,7 @@ Extension Host smokeの結果は`artifacts/`配下へ保存されます。
 
 - Codex CLI以外のエージェントには未対応
 - VSIXパッケージによる通常配布は未対応
-- GitHub Issue、Pull Request、CIとの連携は未対応
+- GitHub Issueの作成・編集・コメント・Close、Pull Request、CIとの連携は未対応
 - 差分画面からのファイル編集、commit、checkout、mergeなどは未対応
 - 複数ブランチ、複数worktree、複数Agent Workspace間の比較は未対応
 - 完了済みThreadのCodex側アーカイブ・削除は未対応

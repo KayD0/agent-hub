@@ -21,7 +21,7 @@ export async function run(): Promise<void> {
   assert.equal(extension.isActive, true);
 
   const commands = await vscode.commands.getCommands(true);
-  for (const command of ["agentHub.startSession", "agentHub.refresh", "agentHub.openSession", "agentHub.addRepository", "agentHub.openRepositoryChanges"]) {
+  for (const command of ["agentHub.startSession", "agentHub.refresh", "agentHub.openSession", "agentHub.addRepository", "agentHub.openRepositoryChanges", "agentHub.openRepositoryIssues"]) {
     assert.ok(commands.includes(command), `${command} is registered`);
   }
   await vscode.commands.executeCommand("agentHub.refresh");
@@ -51,6 +51,7 @@ export async function run(): Promise<void> {
     const repositoryGroupId = await vscode.commands.executeCommand<string>("agentHub.addRepository", vscode.Uri.file(repositoryGroupPath));
     assert.ok(repositoryGroupId, "repository group registration returns an id");
     await vscode.commands.executeCommand("agentHub.openRepositoryChanges", repositoryGroupId);
+    await vscode.commands.executeCommand("agentHub.openRepositoryIssues", repositoryGroupId);
     await vscode.commands.executeCommand("agentHub.removeRepository", repositoryGroupId);
   } finally {
     await fs.rm(repositoryGroupPath, { recursive: true, force: true });
