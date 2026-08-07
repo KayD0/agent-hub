@@ -3,12 +3,16 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { AuthenticationManager } from "./application/authentication-manager";
 import { SessionManager } from "./application/session-manager";
+import { RepositoryManager } from "./application/repository-manager";
 import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
+import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
 import { SessionDetailPanel } from "./presentation/session-detail-panel";
 import { SessionWebviewProvider } from "./presentation/session-webview-provider";
+import { RepositoryDiffPanel } from "./presentation/repository-diff-panel";
+import { RepositoryWebviewProvider } from "./presentation/repository-webview-provider";
 
 let manager: SessionManager | undefined;
 let logger: FileLogger | undefined;
@@ -25,13 +29,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await logger.info("Extension activation started", { codexPath });
   const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }), codexArgs);
   const authentication = new AuthenticationManager(gateway);
+  const gitReader = new GitRepositoryReader();
+  const repositoryManager = new RepositoryManager(context.globalState, gitReader);
+  const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), showError);
+  let repositoriesView: RepositoryWebviewProvider;
+  const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
+    const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "リポジトリグループを登録" });
+    if (!selected?.[0]) return undefined;
+    const repository = await repositoryManager.register(selected[0].fsPath);
+    await repositoriesView.refresh();
+    await repositoryDiffPanel.show(repository.id);
+    return repository.id;
+  };
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, async () => { await addRepository(); }, (repositoryId) => repositoryDiffPanel.show(repositoryId), showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
+    vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
     sessionsView,
     detailPanel,
+    repositoryDiffPanel,
     { dispose: () => void manager?.dispose() },
   );
 
@@ -50,6 +69,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.logout", () => authentication.logout()),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh(true)),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
+    vscode.commands.registerCommand("agentHub.addRepository", (candidate?: vscode.Uri) => addRepository(candidate)),
+    vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),
+    vscode.commands.registerCommand("agentHub.refreshRepositories", () => repositoriesView.refresh()),
+    vscode.commands.registerCommand("agentHub.removeRepository", async (repositoryId: string) => { await repositoryManager.remove(repositoryId); await repositoriesView.refresh(); }),
   );
 
   const changeSubscription = manager.onDidChange(() => void notifyForChanges(manager!));
