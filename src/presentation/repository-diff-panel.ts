@@ -76,8 +76,18 @@ export class RepositoryDiffPanel implements vscode.Disposable {
         ? '<section class="state"><h2>Gitリポジトリが見つかりません</h2><p>登録フォルダの配下にあるGitリポジトリを検出できませんでした。</p></section>'
         : entries.length === 0
           ? '<section class="state"><h2>変更はありません</h2><p>配下のすべてのリポジトリでHEADとWorking Treeが一致しています。</p></section>'
-          : `<div class="layout"><nav aria-label="変更ファイル"><div class="nav-title">${snapshot.repositories.length}リポジトリ・変更ファイル ${entries.length}</div>${files}</nav><main aria-live="polite"><div class="diff-title"><span class="repo-label">${escapeHtml(selected!.repository.name)}</span><span class="kind">${kindLabel(selected!.file.kind)}</span><span title="${escapeHtml(selected!.file.path)}">${escapeHtml(selected!.file.path)}</span></div>${renderDiff(diff)}</main></div>`;
+          : `<div class="layout"><nav aria-label="変更ファイル"><div class="nav-title">${snapshot.repositories.length}リポジトリ・変更ファイル ${entries.length}</div>${files}</nav><div id="pane-resizer" class="pane-resizer" role="separator" aria-label="ファイル一覧と差分表示の幅を調整" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="70" aria-valuenow="32" tabindex="0"></div><main aria-live="polite"><div class="diff-title"><span class="repo-label">${escapeHtml(selected!.repository.name)}</span><span class="kind">${kindLabel(selected!.file.kind)}</span><span title="${escapeHtml(selected!.file.path)}">${escapeHtml(selected!.file.path)}</span></div>${renderDiff(diff)}</main></div>`;
     panel.webview.html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><style nonce="${nonce}">*{box-sizing:border-box}body{margin:0;color:var(--vscode-foreground);background:var(--vscode-editor-background);font-family:var(--vscode-font-family);overflow:hidden}header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--vscode-panel-border)}header div{min-width:0;flex:1}h1{margin:0;font-size:18px}header p{margin:4px 0 0;color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.badge{flex:none;padding:3px 8px;border:1px solid var(--vscode-panel-border);border-radius:10px;font-size:11px}.actions{display:flex;gap:6px}button{border:0;padding:6px 10px;color:var(--vscode-button-foreground);background:var(--vscode-button-background);cursor:pointer}button.secondary{color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground)}.layout{display:grid;grid-template-columns:minmax(260px,32%) minmax(0,1fr);height:calc(100vh - 75px)}nav,main{min-height:0;overflow:auto}nav{border-right:1px solid var(--vscode-panel-border)}.nav-title{position:sticky;top:0;z-index:2;padding:10px 12px;color:var(--vscode-descriptionForeground);background:var(--vscode-editor-background);border-bottom:1px solid var(--vscode-panel-border)}.repo-heading{position:sticky;top:35px;z-index:1;padding:7px 12px;background:var(--vscode-sideBarSectionHeader-background);border-bottom:1px solid var(--vscode-panel-border);font-weight:600}.repo-heading span{margin-left:6px;color:var(--vscode-descriptionForeground);font-size:11px;font-weight:400}.file{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:6px;width:100%;padding:8px 12px 8px 20px;text-align:left;color:var(--vscode-foreground);background:transparent;border-bottom:1px solid var(--vscode-panel-border)}.file:hover{background:var(--vscode-list-hoverBackground)}.file:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}.file[aria-selected="true"]{color:var(--vscode-list-activeSelectionForeground);background:var(--vscode-list-activeSelectionBackground)}.file-path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stat{color:var(--vscode-descriptionForeground);font-size:11px}.kind{font-weight:700;color:var(--vscode-gitDecoration-modifiedResourceForeground)}.diff-title{position:sticky;top:0;z-index:1;display:flex;gap:9px;padding:10px 14px;background:var(--vscode-editor-background);border-bottom:1px solid var(--vscode-panel-border);font-weight:600}.repo-label{padding-right:9px;border-right:1px solid var(--vscode-panel-border);color:var(--vscode-descriptionForeground)}.diff{min-width:max-content;margin:0;padding:8px 0;font:var(--vscode-editor-font-size)/var(--vscode-editor-line-height) var(--vscode-editor-font-family);tab-size:4}.line{display:block;min-height:var(--vscode-editor-line-height);padding:0 14px;white-space:pre}.add{background:var(--vscode-diffEditor-insertedTextBackground)}.delete{background:var(--vscode-diffEditor-removedTextBackground)}.hunk{color:var(--vscode-editorInfo-foreground);background:var(--vscode-diffEditor-unchangedRegionBackground)}.meta{color:var(--vscode-descriptionForeground)}.state{margin:24px;padding:20px;border:1px solid var(--vscode-panel-border)}.error{border-color:var(--vscode-inputValidation-errorBorder)}@media(max-width:700px){body{overflow:auto}.layout{grid-template-columns:1fr;height:auto}nav{max-height:38vh;border-right:0}main{min-height:50vh;border-top:1px solid var(--vscode-panel-border)}}</style></head><body><header><div><h1>${escapeHtml(repository.name)}</h1><p title="${escapeHtml(repository.rootPath)}">${escapeHtml(repository.rootPath)}</p></div><span class="badge">${snapshot.repositories.length}リポジトリ</span><div class="actions"><button id="refresh" class="secondary">更新</button><button id="open-window">新しいウィンドウで開く</button></div></header>${state}<script nonce="${nonce}">const vscode=acquireVsCodeApi();document.getElementById('refresh').addEventListener('click',()=>vscode.postMessage({type:'refresh'}));document.getElementById('open-window').addEventListener('click',()=>vscode.postMessage({type:'openWindow'}));document.querySelectorAll('[data-path]').forEach(button=>button.addEventListener('click',()=>vscode.postMessage({type:'selectDiff',path:button.dataset.path})));</script></body></html>`;
+    panel.webview.html = panel.webview.html
+      .replace(
+        ".layout{display:grid;grid-template-columns:minmax(260px,32%) minmax(0,1fr);height:calc(100vh - 75px)}nav,main{min-height:0;overflow:auto}nav{border-right:1px solid var(--vscode-panel-border)}",
+        ".layout{--file-pane-width:32%;display:grid;grid-template-columns:minmax(220px,var(--file-pane-width)) 5px minmax(0,1fr);height:calc(100vh - 75px)}nav,main{min-height:0;overflow:auto}.pane-resizer{position:relative;z-index:3;background:var(--vscode-panel-border);cursor:col-resize;touch-action:none}.pane-resizer::after{content:\"\";position:absolute;inset:0 -3px}.pane-resizer:hover,.pane-resizer:focus-visible,.pane-resizer.dragging{background:var(--vscode-focusBorder);outline:none}body.resizing{cursor:col-resize;user-select:none}nav{border-right:0}",
+      )
+      .replace(
+        "@media(max-width:700px){body{overflow:auto}.layout{grid-template-columns:1fr;height:auto}nav{max-height:38vh;border-right:0}",
+        "@media(max-width:700px){body{overflow:auto}.layout{grid-template-columns:1fr;height:auto}.pane-resizer{display:none}nav{max-height:38vh;border-right:0}",
+      )
+      .replace("</script>", `${paneResizerScript()}</script>`);
   }
 }
 
@@ -107,6 +117,50 @@ function lineClass(line: string): string {
 
 function kindLabel(kind: RepositoryFileChange["kind"]): string {
   return ({ added: "A", modified: "M", deleted: "D", renamed: "R", untracked: "U" } as const)[kind];
+}
+
+function paneResizerScript(): string {
+  return `
+const layout=document.querySelector('.layout');
+const resizer=document.getElementById('pane-resizer');
+if(layout&&resizer){
+  const clamp=value=>Math.min(70,Math.max(20,value));
+  const applyWidth=value=>{
+    const width=clamp(value);
+    layout.style.setProperty('--file-pane-width',width+'%');
+    resizer.setAttribute('aria-valuenow',String(Math.round(width)));
+    vscode.setState({...vscode.getState(),filePaneWidth:width});
+  };
+  const savedWidth=Number(vscode.getState()?.filePaneWidth);
+  applyWidth(Number.isFinite(savedWidth)?savedWidth:32);
+  resizer.addEventListener('pointerdown',event=>{
+    if(event.button!==0)return;
+    resizer.setPointerCapture(event.pointerId);
+    resizer.classList.add('dragging');
+    document.body.classList.add('resizing');
+    resizer.focus();
+  });
+  resizer.addEventListener('pointermove',event=>{
+    if(!resizer.hasPointerCapture(event.pointerId))return;
+    const bounds=layout.getBoundingClientRect();
+    applyWidth((event.clientX-bounds.left)/bounds.width*100);
+  });
+  const finishResize=event=>{
+    if(resizer.hasPointerCapture(event.pointerId))resizer.releasePointerCapture(event.pointerId);
+    resizer.classList.remove('dragging');
+    document.body.classList.remove('resizing');
+  };
+  resizer.addEventListener('pointerup',finishResize);
+  resizer.addEventListener('pointercancel',finishResize);
+  resizer.addEventListener('dblclick',()=>applyWidth(32));
+  resizer.addEventListener('keydown',event=>{
+    const current=Number(resizer.getAttribute('aria-valuenow'))||32;
+    if(event.key==='ArrowLeft'){event.preventDefault();applyWidth(current-2);}
+    else if(event.key==='ArrowRight'){event.preventDefault();applyWidth(current+2);}
+    else if(event.key==='Home'){event.preventDefault();applyWidth(20);}
+    else if(event.key==='End'){event.preventDefault();applyWidth(70);}
+  });
+}`;
 }
 
 function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!); }

@@ -44,7 +44,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await repositoryDiffPanel.show(repository.id);
     return repository.id;
   };
-  repositoriesView = new RepositoryWebviewProvider(repositoryManager, async () => { await addRepository(); }, (repositoryId) => repositoryDiffPanel.show(repositoryId), showError);
+  const createGroupSession = async (repositoryId: string): Promise<void> => {
+    if (!authentication.isAuthenticated()) {
+      const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
+      if (action) await vscode.commands.executeCommand("agentHub.login");
+      return;
+    }
+    const group = repositoryManager.get(repositoryId);
+    if (!group) throw new Error("登録済みフォルダが見つかりません。");
+    const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath));
+    if (session) detailPanel.show(session.id);
+  };
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, async () => { await addRepository(); }, (repositoryId) => repositoryDiffPanel.show(repositoryId), createGroupSession, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
@@ -126,11 +137,12 @@ export async function deactivate(): Promise<void> {
 async function startSession(
   context: vscode.ExtensionContext,
   sessionManager: SessionManager,
+  selectedFolder?: vscode.Uri,
 ): Promise<ReturnType<SessionManager["get"]>> {
   await logger?.info("Start session command invoked");
   try {
-    await logger?.info("Opening folder selector");
-    const folder = await selectFolder(context);
+    if (!selectedFolder) await logger?.info("Opening folder selector");
+    const folder = selectedFolder ?? await selectFolder(context);
     if (!folder) {
       await logger?.info("Start session cancelled at folder selector");
       return;
