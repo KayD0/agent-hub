@@ -26,10 +26,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   logger = new FileLogger(context.extensionUri, output);
   context.subscriptions.push(logger);
   await logger.initialize();
-  const codexPath = vscode.workspace.getConfiguration("agentHub").get<string>("codexPath", "codex");
+  const codexPath = vscode.workspace.getConfiguration("agentHub").get<string>("codexPath")?.trim() || undefined;
   const codexArgs = vscode.workspace.getConfiguration("agentHub").get<string[]>("codexArgs", []);
   const autoApprovalPolicy = readAutoApprovalPolicy();
-  await logger.info("Extension activation started", { codexPath });
+  await logger.info("Extension activation started", { codexPath: codexPath ?? "PATH:codex" });
   const gateway = new AppServerClient(codexPath, (message) => void logger?.info("Codex app-server", { message }), codexArgs);
   const authentication = new AuthenticationManager(gateway);
   const gitReader = new GitRepositoryReader();

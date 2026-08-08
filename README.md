@@ -83,7 +83,7 @@ Codexとの通信には`codex app-server`のstdio JSONLプロトコルを使用�
 - Git（リポジトリ差分機能を利用する場合）
 - GitHub CLI（Issue連携を利用する場合）
 
-既定ではPATH上の`codex`を使用します。必要な場合はVS Code設定の`agentHub.codexPath`へ実行ファイルのパスを指定してください。
+既定ではPATH上から`codex`（Windowsでは`codex.exe`、`codex.cmd`を含む）を検出します。必要な場合だけ、VS Code設定の`agentHub.codexPath`へ実行ファイルのパスを指定してください。見つからない場合は、PATHの設定または`agentHub.codexPath`の指定方法を含むエラーを表示します。
 
 VS Code Web、`vscode.dev`、`github.dev`は対象外です。
 
@@ -123,7 +123,7 @@ Extension Host smokeの結果は`artifacts/`配下へ保存されます。
 
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
-| `agentHub.codexPath` | `codex` | Codex CLI実行ファイルのパス |
+| `agentHub.codexPath` | 未指定 | Codex CLI実行ファイルの任意指定。未指定時はPATHから自動検出 |
 | `agentHub.codexArgs` | `[]` | `app-server`より前へ追加する引数 |
 | `agentHub.notifyOnActionRequired` | `true` | 承認・入力待ちを通知 |
 | `agentHub.notifyOnComplete` | `true` | Turn完了を通知 |
