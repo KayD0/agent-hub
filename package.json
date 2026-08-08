@@ -75,6 +75,21 @@
         "title": "AgentHub: セッション一覧を更新"
       },
       {
+        "command": "agentHub.filterSessionsByRepository",
+        "title": "フォルダでセッションを絞り込む",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "agentHub.enableBulkAuto",
+        "title": "一括Autoを有効にする",
+        "icon": "$(circle-large-outline)"
+      },
+      {
+        "command": "agentHub.disableBulkAuto",
+        "title": "一括Autoを無効にする",
+        "icon": "$(pass-filled)"
+      },
+      {
         "command": "agentHub.openSession",
         "title": "AgentHub: セッション詳細を開く"
       },
@@ -111,6 +126,21 @@
           "command": "agentHub.cancelLogin",
           "when": "view == agentHub.sessions && agentHub.authenticationStatus == logging_in",
           "group": "navigation@1"
+        },
+        {
+          "command": "agentHub.filterSessionsByRepository",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && agentHub.hasRepositoryGroups",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentHub.enableBulkAuto",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && !agentHub.bulkAutoEnabled",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agentHub.disableBulkAuto",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && agentHub.bulkAutoEnabled",
+          "group": "navigation@3"
         },
         {
           "command": "agentHub.addRepository",

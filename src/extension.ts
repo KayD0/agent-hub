@@ -48,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
-  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), showError);
+  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), context.workspaceState, showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
     const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "フォルダを登録" });
@@ -96,6 +96,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.cancelLogin", () => authentication.cancelLogin()),
     vscode.commands.registerCommand("agentHub.logout", () => authentication.logout()),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh(true)),
+    vscode.commands.registerCommand("agentHub.filterSessionsByRepository", () => sessionsView.selectRepositoryGroups()),
+    vscode.commands.registerCommand("agentHub.enableBulkAuto", () => sessionsView.setAllAutoApprove(true)),
+    vscode.commands.registerCommand("agentHub.disableBulkAuto", () => sessionsView.setAllAutoApprove(false)),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
     vscode.commands.registerCommand("agentHub.addRepository", (candidate?: vscode.Uri) => addRepository(candidate)),
     vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),
