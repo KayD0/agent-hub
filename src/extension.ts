@@ -48,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
-  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), context.workspaceState, showError);
+  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
     const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "フォルダを登録" });

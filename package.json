@@ -207,8 +207,8 @@
   "scripts": {
     "compile": "tsc -p .",
     "watch": "tsc -p . -w",
-    "test": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/protocol-boundaries.test.js dist/test/app-server-client.test.js dist/test/markdown-renderer.test.js dist/test/git-repository-reader.test.js dist/test/repository-file-reader.test.js dist/test/github-issue-client.test.js",
-    "test:unit": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/markdown-renderer.test.js dist/test/git-repository-reader.test.js dist/test/repository-file-reader.test.js dist/test/github-issue-client.test.js",
+    "test": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/protocol-boundaries.test.js dist/test/app-server-client.test.js dist/test/markdown-renderer.test.js dist/test/git-repository-reader.test.js dist/test/repository-file-reader.test.js dist/test/github-issue-client.test.js dist/test/session-webview-dom.test.js",
+    "test:unit": "npm run compile && node --test dist/test/authentication-manager.test.js dist/test/approval-policy.test.js dist/test/session-manager.test.js dist/test/markdown-renderer.test.js dist/test/git-repository-reader.test.js dist/test/repository-file-reader.test.js dist/test/github-issue-client.test.js dist/test/session-webview-dom.test.js",
     "test:protocol": "npm run compile && node --test dist/test/protocol-boundaries.test.js",
     "test:app-server": "npm run compile && node --test dist/test/app-server-client.test.js",
     "test:extension": "npm run compile && node scripts/run-extension-tests.js",
@@ -216,11 +216,13 @@
     "package:vsix": "vsce package --githubBranch develop --out releases/agenthub-codex.vsix"
   },
   "devDependencies": {
+    "@types/jsdom": "^21.1.7",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.100.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
+    "jsdom": "^26.1.0",
     "typescript": "^5.9.0"
   },
   "dependencies": {
