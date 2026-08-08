@@ -111,3 +111,21 @@ test("additional input posts the stable session contract", async (context) => {
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "send", sessionId: "one", text: "追加指示" }));
   assert.equal(textarea.value, "");
 });
+
+test("session details open from the card without a dedicated button", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one")]);
+  const card = dom.window.document.querySelector<HTMLElement>('[data-session-id="one"]')!;
+  assert.equal(card.querySelector(".card-open"), null);
+
+  card.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "open", sessionId: "one" }));
+
+  const messageCount = posted.length;
+  card.querySelector("textarea")!.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
+  assert.equal(posted.length, messageCount);
+
+  card.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "open", sessionId: "one" }));
+});

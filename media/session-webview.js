@@ -84,6 +84,16 @@
   function createCard(session) {
     const card = el("article", "session");
     card.dataset.sessionId = session.id;
+    card.tabIndex = 0;
+    card.addEventListener("dblclick", (event) => {
+      if (event.target.closest("button,input,textarea,select,a,label,form,fieldset,[role=button],[contenteditable=true]")) return;
+      vscode.postMessage({ type: "open", sessionId: card.dataset.sessionId });
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.target !== card || event.key !== "Enter") return;
+      event.preventDefault();
+      vscode.postMessage({ type: "open", sessionId: card.dataset.sessionId });
+    });
 
     const head = el("div", "session-head");
     const handle = el("span", "drag-handle", "⠿");
@@ -126,9 +136,7 @@
 
     const quickActions = el("div", "card-quick-actions");
     const inputPopover = createInputPopover(card);
-    const open = button("↗", "詳細を開く", () => vscode.postMessage({ type: "open", sessionId: card.dataset.sessionId }));
-    open.className = "card-open";
-    quickActions.append(inputPopover, open);
+    quickActions.append(inputPopover);
     card.append(quickActions, el("div", "pending-slot"));
     return card;
   }
@@ -182,6 +190,8 @@
 
   function updateCard(card, session) {
     card.dataset.status = session.status;
+    card.title = "ダブルクリックまたはEnterで詳細を開く";
+    card.setAttribute("aria-label", session.title + "。" + (labels[session.status] || session.status) + "。Enterで詳細を開く");
     const handle = card.querySelector(".drag-handle");
     handle.setAttribute("aria-label", session.title + "を並べ替え");
     card.querySelector(".title").textContent = session.title;
