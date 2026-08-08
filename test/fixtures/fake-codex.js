@@ -11,8 +11,8 @@ reader.on("line", (line) => {
     return send({ id: message.id, result: { account: { type: "chatgpt", email: "fake@example.test" }, requiresOpenaiAuth: true } });
   }
   if (message.method === "thread/start") {
-    if (message.params?.cwd === "__timeout__") return;
-    if (message.params?.cwd === "__crash__") return process.exit(23);
+    if (message.params?.cwd?.endsWith("__timeout__")) return;
+    if (message.params?.cwd?.endsWith("__crash__")) return process.exit(23);
     return send({ id: message.id, result: { thread: { id: "fake-thread" } } });
   }
   if (message.method === "thread/resume") return send({ id: message.id, result: {} });

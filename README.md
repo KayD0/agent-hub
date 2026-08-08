@@ -6,7 +6,7 @@ AgentHubは、複数のAI作業を並行して進めるときの「監督画面�
 
 Codexとの通信には`codex app-server`のstdio JSONLプロトコルを使用し、PTYやターミナル画面の文字列解析には依存しません。
 
-詳しい利用場面は[概要とメリット](./docs/app-benefits.md)、操作方法は[利用マニュアル](./docs/user-manual.md)を参照してください。
+詳しい利用場面は[概要とメリット](./docs/app-benefits.md)、操作方法は[利用マニュアル](./docs/user-manual.md)、VSIXの導入と復旧は[VSIX導入手順](./docs/vsix-installation.md)を参照してください。
 
 ## 主な機能
 
@@ -89,11 +89,12 @@ VS Code Web、`vscode.dev`、`github.dev`は対象外です。
 
 ## 開発版を起動する
 
-現在は開発版であり、VSIXによる通常配布には対応していません。
+開発版のVSIXを再現可能な手順で生成できます。
 
 ```powershell
 npm install
 npm test
+npm run package:vsix
 ```
 
 VS Codeでこのフォルダを開き、`F5`で`Run AgentHub Extension`を起動します。開いたExtension Development HostのActivity BarからAgentHubを選択してください。
@@ -134,7 +135,7 @@ Extension Host smokeの結果は`artifacts/`配下へ保存されます。
 ## 現在の制約
 
 - Codex CLI以外のエージェントには未対応
-- VSIXパッケージによる通常配布は未対応
+- Marketplace公開と自動更新は未対応（VSIX配布には対応）
 - GitHub Issueの作成・編集・コメント・Close、Pull Request、CIとの連携は未対応
 - 差分画面からのファイル編集、commit、checkout、mergeなどは未対応
 - 複数ブランチ、複数worktree、複数Agent Workspace間の比較は未対応

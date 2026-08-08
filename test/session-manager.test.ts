@@ -83,6 +83,19 @@ test("persisted status and attention guards reject unknown values", () => {
   assert.equal(isAttentionLevel("warning"), false);
 });
 
+test("manual reconnect restarts the gateway and restores persisted threads", async () => {
+  const repository = new MemoryRepository();
+  repository.value = [persistedSession("session-1", "Session", 1)];
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, repository);
+  await manager.initialize();
+
+  await manager.reconnect();
+
+  assert.equal(gateway.starts, 2);
+  assert.equal(gateway.resumes, 2);
+});
+
 test("restoring sessions preserves terminal states and interrupts active work", async () => {
   const repository = new MemoryRepository();
   repository.value = [

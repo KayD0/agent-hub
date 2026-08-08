@@ -32,7 +32,7 @@ export class AppServerClient implements CodexGateway {
   private stopping = false;
 
   public constructor(
-    private readonly codexPath: string | undefined,
+    private readonly codexPath: string | undefined | (() => string | undefined),
     private readonly log: (message: string) => void,
     private readonly commandArgs: readonly string[] = [],
     private readonly requestTimeoutMs = 30_000,
@@ -41,7 +41,7 @@ export class AppServerClient implements CodexGateway {
   public async start(): Promise<void> {
     if (this.process) return;
     this.stopping = false;
-    const command = resolveCodexCommand(this.codexPath);
+    const command = resolveCodexCommand(typeof this.codexPath === "function" ? this.codexPath() : this.codexPath);
     const child = spawn(command.file, [...command.args, ...this.commandArgs, "app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
