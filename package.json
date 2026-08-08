@@ -125,8 +125,8 @@
       "properties": {
         "agentHub.codexPath": {
           "type": "string",
-          "default": "codex",
-          "description": "Codex CLI executable path."
+          "default": "",
+          "description": "Optional Codex CLI executable path. When empty, AgentHub detects codex from PATH."
         },
         "agentHub.codexArgs": {
           "type": "array",

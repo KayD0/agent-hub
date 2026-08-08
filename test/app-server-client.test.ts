@@ -1,9 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as path from "node:path";
-import { AppServerClient } from "../src/infrastructure/codex/app-server-client";
+import { AppServerClient, resolveCodexCommand } from "../src/infrastructure/codex/app-server-client";
 
 const fixture = path.resolve(__dirname, "../../test/fixtures/fake-codex.js");
+
+test("Codex command resolution prefers an explicit executable", () => {
+  const result = resolveCodexCommand("C:\\tools\\custom-codex.exe", {
+    platform: "win32",
+    pathValue: "C:\\ignored",
+    existsSync: (candidate) => candidate === "C:\\tools\\custom-codex.exe",
+  });
+  assert.deepEqual(result, { file: "C:\\tools\\custom-codex.exe", args: [] });
+});
+
+test("Codex command resolution detects a Windows npm shim from PATH", () => {
+  const result = resolveCodexCommand(undefined, {
+    platform: "win32",
+    pathValue: '"C:\\Program Files\\nodejs";C:\\Users\\test\\AppData\\Roaming\\npm',
+    comSpec: "C:\\Windows\\System32\\cmd.exe",
+    existsSync: (candidate) => candidate === "C:\\Users\\test\\AppData\\Roaming\\npm\\codex.cmd",
+  });
+  assert.deepEqual(result, {
+    file: "C:\\Windows\\System32\\cmd.exe",
+    args: ["/d", "/s", "/c", "C:\\Users\\test\\AppData\\Roaming\\npm\\codex.cmd"],
+  });
+});
+
+test("Codex command resolution explains how to fix a missing CLI", () => {
+  assert.throws(
+    () => resolveCodexCommand(undefined, { platform: "win32", pathValue: "C:\\empty", existsSync: () => false }),
+    /Codex CLIが見つかりません.*PATH.*agentHub\.codexPath/,
+  );
+});
 
 test("AppServerClient exchanges JSONL with a fake app-server", async () => {
   const client = new AppServerClient(process.execPath, () => {}, [fixture]);

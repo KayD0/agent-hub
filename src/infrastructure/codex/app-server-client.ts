@@ -32,7 +32,7 @@ export class AppServerClient implements CodexGateway {
   private stopping = false;
 
   public constructor(
-    private readonly codexPath: string,
+    private readonly codexPath: string | undefined,
     private readonly log: (message: string) => void,
     private readonly commandArgs: readonly string[] = [],
     private readonly requestTimeoutMs = 30_000,
@@ -41,7 +41,7 @@ export class AppServerClient implements CodexGateway {
   public async start(): Promise<void> {
     if (this.process) return;
     this.stopping = false;
-    const command = resolveCommand(this.codexPath);
+    const command = resolveCodexCommand(this.codexPath);
     const child = spawn(command.file, [...command.args, ...this.commandArgs, "app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -266,38 +266,59 @@ export class AppServerClient implements CodexGateway {
   }
 }
 
-interface SpawnCommand {
+export interface SpawnCommand {
   file: string;
   args: string[];
 }
 
-function resolveCommand(command: string): SpawnCommand {
-  if (process.platform !== "win32") return { file: command, args: [] };
+interface CommandResolutionOptions {
+  platform?: NodeJS.Platform;
+  pathValue?: string;
+  comSpec?: string;
+  existsSync?: (candidate: string) => boolean;
+}
 
-  const resolved = resolveWindowsExecutable(command);
-  const extension = path.extname(resolved).toLocaleLowerCase();
+export function resolveCodexCommand(configuredPath?: string, options: CommandResolutionOptions = {}): SpawnCommand {
+  const platform = options.platform ?? process.platform;
+  const existsSync = options.existsSync ?? fs.existsSync;
+  const explicit = configuredPath?.trim();
+  const resolved = explicit
+    ? resolveExplicitExecutable(explicit, platform, options.pathValue ?? process.env.PATH, existsSync)
+    : findExecutableOnPath("codex", platform, options.pathValue ?? process.env.PATH, existsSync);
+  if (!resolved) {
+    const target = explicit ? `設定された実行ファイル「${explicit}」` : "PATH上のcodexコマンド";
+    throw new Error(`Codex CLIが見つかりません（${target}）。Codex CLIをPATHから実行可能にするか、VS Code設定 agentHub.codexPath に実行ファイルを指定してください。`);
+  }
+  if (platform !== "win32") return { file: resolved, args: [] };
+
+  const extension = path.win32.extname(resolved).toLocaleLowerCase();
   if (extension === ".cmd" || extension === ".bat") {
     return {
-      file: process.env.ComSpec || "cmd.exe",
+      file: options.comSpec || process.env.ComSpec || "cmd.exe",
       args: ["/d", "/s", "/c", resolved],
     };
   }
   return { file: resolved, args: [] };
 }
 
-function resolveWindowsExecutable(command: string): string {
-  if (path.extname(command) || path.isAbsolute(command) || command.includes("/") || command.includes("\\")) {
-    return command;
-  }
+function resolveExplicitExecutable(command: string, platform: NodeJS.Platform, pathValue: string | undefined, existsSync: (candidate: string) => boolean): string | undefined {
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  if (pathApi.isAbsolute(command) || command.includes("/") || command.includes("\\")) return existsSync(command) ? command : undefined;
+  return findExecutableOnPath(command, platform, pathValue, existsSync);
+}
 
-  const pathDirectories = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  for (const extension of [".exe", ".cmd", ".bat", ".com"]) {
+function findExecutableOnPath(command: string, platform: NodeJS.Platform, pathValue: string | undefined, existsSync: (candidate: string) => boolean): string | undefined {
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const delimiter = platform === "win32" ? ";" : ":";
+  const extensions = platform === "win32" ? [".exe", ".cmd", ".bat", ".com", ""] : [""];
+  const pathDirectories = (pathValue ?? "").split(delimiter).map((value) => value.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  for (const extension of extensions) {
     for (const directory of pathDirectories) {
-      const candidate = path.join(directory, `${command}${extension}`);
-      if (fs.existsSync(candidate)) return candidate;
+      const candidate = pathApi.join(directory, pathApi.extname(command) ? command : `${command}${extension}`);
+      if (existsSync(candidate)) return candidate;
     }
   }
-  return command;
+  return undefined;
 }
 
 function asObject(value: unknown): Record<string, unknown> {
