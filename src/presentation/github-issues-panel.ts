@@ -13,7 +13,7 @@ export class GitHubIssuesPanel implements vscode.Disposable {
   public constructor(
     private readonly manager: RepositoryManager,
     private readonly client: GitHubIssueClient,
-    private readonly startIssueSession: (issue: GitHubIssue) => Promise<void>,
+    private readonly startIssueSession: (issue: GitHubIssue, groupId: string) => Promise<void>,
     private readonly onError: (error: unknown) => void,
   ) {}
 
@@ -42,7 +42,7 @@ export class GitHubIssuesPanel implements vscode.Disposable {
         if (panel) await this.renderOnce(groupId, panel);
       } else if (message.type === "startIssue" && typeof message.issueKey === "string") {
         const issue = this.issues.get(`${groupId}:${message.issueKey}`);
-        if (issue) await this.startIssueSession(issue);
+        if (issue) await this.startIssueSession(issue, groupId);
       } else if (message.type === "openIssue" && typeof message.issueKey === "string") {
         const issue = this.issues.get(`${groupId}:${message.issueKey}`);
         if (issue) await vscode.env.openExternal(vscode.Uri.parse(issue.url));

@@ -35,13 +35,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const gitReader = new GitRepositoryReader();
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, new RepositoryFileReader(), showError);
-  const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, new GitHubIssueClient(), async (issue) => {
+  const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, new GitHubIssueClient(), async (issue, groupId) => {
     if (!authentication.isAuthenticated()) {
       const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
       if (action) await vscode.commands.executeCommand("agentHub.login");
       return;
     }
-    const sessions = manager!.list();
+    const group = repositoryManager.get(groupId);
+    if (!group) throw new Error("登録済みフォルダが見つかりません。");
+    const sessions = manager!.list().filter((session) => isInside(session.cwd, group.rootPath));
     const choices: Array<vscode.QuickPickItem & { sessionId?: string }> = [
       { label: "$(add) 新しいセッションを開始", description: issue.repository.rootPath },
       ...sessions.map((session) => ({
