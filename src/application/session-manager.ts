@@ -3,6 +3,7 @@ import {
   InputQuestion,
   ManagedSession,
   PersistedSession,
+  RelatedGitHubIssue,
   SessionActivity,
   SessionStatus,
   attentionForStatus,
@@ -117,6 +118,7 @@ export class SessionManager {
       attention: "none",
       currentActivity: prompt ? "ターンを開始しています" : "指示を入力できます",
       lastInstruction: prompt?.trim() || undefined,
+      relatedIssues: [],
       autoApprove: false,
       approvalAudit: [],
       unread: false,
@@ -209,6 +211,18 @@ export class SessionManager {
       }
     }
     this.emitChange();
+  }
+
+  public async attachGitHubIssue(sessionId: string, issue: Omit<RelatedGitHubIssue, "linkedAt">, instruction: string): Promise<void> {
+    const session = this.requireSession(sessionId);
+    await this.sendMessage(sessionId, instruction);
+    const linked: RelatedGitHubIssue = { ...issue, linkedAt: Date.now() };
+    const existing = session.relatedIssues.findIndex((candidate) => candidate.repository === issue.repository && candidate.number === issue.number);
+    if (existing >= 0) session.relatedIssues[existing] = linked;
+    else session.relatedIssues.push(linked);
+    this.appendActivity(session, "system", `GitHub Issue ${issue.repository}#${issue.number} を関連付け`, issue.url);
+    this.emitChange();
+    await this.persist();
   }
 
   public setAllAutoApprove(enabled: boolean): void {
@@ -526,6 +540,7 @@ export class SessionManager {
       ...persisted,
       autoApprove: false,
       approvalAudit: persisted.approvalAudit ?? [],
+      relatedIssues: persisted.relatedIssues ?? [],
       pendingInteraction: undefined,
       currentTurnId: undefined,
       activities: [],

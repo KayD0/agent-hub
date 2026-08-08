@@ -73,6 +73,16 @@ export interface ApprovalAuditEntry {
   matchedRule?: string;
 }
 
+export interface RelatedGitHubIssue {
+  repository: string;
+  number: number;
+  title: string;
+  url: string;
+  branch?: string;
+  worktree?: string;
+  linkedAt: number;
+}
+
 export interface ManagedSession {
   id: string;
   threadId: string;
@@ -83,6 +93,7 @@ export interface ManagedSession {
   currentActivity?: string;
   finalResult?: string;
   lastInstruction?: string;
+  relatedIssues: RelatedGitHubIssue[];
   autoApprove: boolean;
   approvalAudit: ApprovalAuditEntry[];
   currentTurnId?: string;
@@ -103,6 +114,7 @@ export interface PersistedSession {
   currentActivity?: string;
   finalResult?: string;
   lastInstruction?: string;
+  relatedIssues?: RelatedGitHubIssue[];
   approvalAudit?: ApprovalAuditEntry[];
   unread: boolean;
   startedAt: number;

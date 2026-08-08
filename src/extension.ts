@@ -41,10 +41,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (action) await vscode.commands.executeCommand("agentHub.login");
       return;
     }
-    const issueBody = issue.body.length > 20_000 ? `${issue.body.slice(0, 20_000)}\n\n（本文は20,000文字で省略されました）` : issue.body;
-    const prompt = `GitHub Issue #${issue.number} に対応してください。\n\nタイトル: ${issue.title}\nURL: ${issue.url}\n\n本文:\n${issueBody || "（本文なし）"}`;
-    const session = await startSession(context, manager!, vscode.Uri.file(issue.repository.rootPath), prompt);
-    if (session) detailPanel.show(session.id);
+    const sessions = manager!.list();
+    const choices: Array<vscode.QuickPickItem & { sessionId?: string }> = [
+      { label: "$(add) 新しいセッションを開始", description: issue.repository.rootPath },
+      ...sessions.map((session) => ({
+        label: `$(comment-discussion) ${session.title}`,
+        description: `${session.status} · ${session.cwd}`,
+        sessionId: session.id,
+      })),
+    ];
+    const selected = await vscode.window.showQuickPick(choices, {
+      title: `Issue ${issue.repository.slug}#${issue.number} を渡すセッション`,
+      placeHolder: "新しいセッション、または既存セッションを選択",
+    });
+    if (!selected) return;
+    const prompt = issuePrompt(issue);
+    if (!selected.sessionId) {
+      const session = await startSession(context, manager!, vscode.Uri.file(issue.repository.rootPath), prompt);
+      if (session) detailPanel.show(session.id);
+      return;
+    }
+    const target = manager!.get(selected.sessionId);
+    if (!target) throw new Error("選択したセッションが見つかりません。");
+    if (!samePath(target.cwd, issue.repository.rootPath)) {
+      const answer = await vscode.window.showWarningMessage(
+        `Issueのリポジトリとセッションの作業フォルダが異なります。\nIssue: ${issue.repository.rootPath}\nSession: ${target.cwd}`,
+        { modal: true },
+        "このセッションへ渡す",
+      );
+      if (answer !== "このセッションへ渡す") return;
+    }
+    await manager!.attachGitHubIssue(selected.sessionId, {
+      repository: issue.repository.slug,
+      number: issue.number,
+      title: issue.title,
+      url: issue.url,
+      worktree: target.cwd,
+    }, prompt);
+    void vscode.window.showInformationMessage(`Issue ${issue.repository.slug}#${issue.number} を「${target.title}」へ渡しました。`);
+    detailPanel.show(target.id);
   }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
@@ -262,6 +297,11 @@ function readAutoApprovalPolicy(): AutoApprovalPolicy {
 
 function samePath(left: string, right: string): boolean {
   return path.resolve(left).toLocaleLowerCase() === path.resolve(right).toLocaleLowerCase();
+}
+
+function issuePrompt(issue: import("./domain/github-issue").GitHubIssue): string {
+  const issueBody = issue.body.length > 20_000 ? `${issue.body.slice(0, 20_000)}\n\n（本文は20,000文字で省略されました）` : issue.body;
+  return `GitHub Issue ${issue.repository.slug}#${issue.number} に対応してください。\n\nタイトル: ${issue.title}\nURL: ${issue.url}\n\n本文:\n${issueBody || "（本文なし）"}`;
 }
 
 function isInside(candidate: string, root: string): boolean {

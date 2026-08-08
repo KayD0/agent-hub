@@ -126,7 +126,7 @@ function renderIssue(issue: GitHubIssue): string {
   const key = issueKey(issue);
   const labels = issue.labels.map((label) => `<span class="label">${escapeHtml(label)}</span>`).join("");
   const assignees = issue.assignees.length ? `<span>担当: ${escapeHtml(issue.assignees.join(", "))}</span>` : "";
-  return `<details class="issue"><summary><span class="number">#${issue.number}</span><span class="title">${escapeHtml(issue.title)}</span><time class="updated" datetime="${escapeHtml(issue.updatedAt)}">${escapeHtml(formatDate(issue.updatedAt))}</time></summary><div class="meta">${labels}${assignees}</div><pre class="body">${escapeHtml(issue.body || "本文はありません。")}</pre><div class="actions"><button data-start="${escapeHtml(key)}">このIssueからセッションを開始</button><button class="secondary" data-open="${escapeHtml(key)}">GitHubで開く</button><button class="secondary" data-copy-link="${escapeHtml(key)}" aria-label="Issue #${issue.number} のリンクをコピー">リンクをコピー</button></div></details>`;
+  return `<details class="issue"><summary><span class="number">#${issue.number}</span><span class="title">${escapeHtml(issue.title)}</span><time class="updated" datetime="${escapeHtml(issue.updatedAt)}">${escapeHtml(formatDate(issue.updatedAt))}</time></summary><div class="actions"><button data-start="${escapeHtml(key)}">Issueをセッションへ渡す</button><button class="secondary" data-open="${escapeHtml(key)}">GitHubで開く</button><button class="secondary" data-copy-link="${escapeHtml(key)}" aria-label="Issue #${issue.number} のリンクをコピー">リンクをコピー</button></div><div class="meta">${labels}${assignees}</div><pre class="body">${escapeHtml(issue.body || "本文はありません。")}</pre></details>`;
 }
 
 function issueKey(issue: GitHubIssue): string { return `${issue.repository.slug}#${issue.number}`; }

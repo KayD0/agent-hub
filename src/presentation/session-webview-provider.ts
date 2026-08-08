@@ -6,7 +6,7 @@ import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
 
-type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
+type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "relatedIssues" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
 type RepositoryGroupFilter = { id: string; name: string; rootPath: string };
 
 interface WebviewMessage {
@@ -119,13 +119,14 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
 
   private snapshot(): SessionViewModel[] {
     const groups = this.listRepositoryGroups();
-    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, autoApprove, pendingInteraction, cwd }) => ({
+    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, relatedIssues, autoApprove, pendingInteraction, cwd }) => ({
       id,
       title,
       status,
       currentActivity: status === "starting" || status === "running" ? "処理中" : currentActivity,
       finalResult,
       lastInstruction,
+      relatedIssues,
       autoApprove,
       pendingInteraction,
       repositoryGroupIds: groups.filter((group) => isInside(cwd, group.rootPath)).map((group) => group.id),
@@ -229,11 +230,12 @@ function renderHtml(webview: vscode.Webview): string {
   function closeCardInputLater(sessionId,popover){clearTimeout(inputCloseTimers.get(sessionId));inputCloseTimers.set(sessionId,setTimeout(()=>{inputCloseTimers.delete(sessionId);if(!popover.matches(':hover')&&!popover.matches(':focus-within'))popover.classList.remove('is-open')},250))}
   function preserveHoveredResult(){const popover=root.querySelector('.result-popover:hover');const sessionId=popover?.dataset.resultSession;if(sessionId)openResult(sessionId,popover)}
   function decorateInstructions(){for(const session of sessions){if(!session.lastInstruction)continue;const card=root.querySelector('[data-session-id="'+CSS.escape(session.id)+'"]');const quickActions=card?.querySelector('.card-quick-actions');if(!card||!quickActions)continue;const instruction=el('div','last-instruction',session.lastInstruction);instruction.title=session.lastInstruction;instruction.setAttribute('aria-label','最後の指示: '+session.lastInstruction);card.insertBefore(instruction,quickActions)}}
+  function decorateRelatedIssues(){for(const session of sessions){if(!session.relatedIssues?.length)continue;const card=root.querySelector('[data-session-id="'+CSS.escape(session.id)+'"]');const quickActions=card?.querySelector('.card-quick-actions');if(!card||!quickActions)continue;const text=session.relatedIssues.map(issue=>issue.repository+'#'+issue.number).join(', ');const related=el('div','last-instruction','関連Issue: '+text);related.title=session.relatedIssues.map(issue=>issue.title+' · '+issue.url).join('\n');related.setAttribute('aria-label','関連Issue: '+text);card.insertBefore(related,quickActions)}}
   function decorateResults(){for(const session of sessions){const card=root.querySelector('[data-session-id="'+CSS.escape(session.id)+'"]');const quickActions=card?.querySelector('.card-quick-actions');const inputPopover=quickActions?.querySelector('.card-input-popover');if(!quickActions||!inputPopover||!session.finalResult)continue;const resultId='result-'+session.id.replace(/[^a-zA-Z0-9_-]/g,'-');const popover=el('div','result-popover');popover.dataset.resultSession=session.id;if(openResults.has(session.id))popover.classList.add('is-open');const toggle=el('button','result-toggle','最終結果');toggle.type='button';toggle.setAttribute('aria-label','最終結果を表示');toggle.setAttribute('aria-describedby',resultId);const result=el('div','result');result.id=resultId;result.setAttribute('role','tooltip');result.append(el('span','result-label','最終結果'),document.createTextNode(session.finalResult));popover.addEventListener('mouseenter',()=>openResult(session.id,popover));popover.addEventListener('mouseleave',()=>closeResultLater(session.id));popover.append(toggle,result);quickActions.insertBefore(popover,inputPopover)}}
   function decorateAutoControls(){for(const session of sessions){const card=root.querySelector('[data-session-id="'+CSS.escape(session.id)+'"]');const head=card?.querySelector('.session-head');if(!head)continue;const label=el('label','auto-control');label.title='ポリシーに一致する承認要求だけをこのセッションで自動許可';const input=el('input');input.type='checkbox';input.checked=session.autoApprove;input.setAttribute('aria-label',session.title+'のポリシーAuto承認');input.addEventListener('change',()=>vscode.postMessage({type:'autoApprove',sessionId:session.id,enabled:input.checked}));label.append(input,document.createTextNode('Auto'));head.insertBefore(label,head.querySelector('.icon-button'))}}
   function captureFocus(){const active=document.activeElement;const card=active?.closest?.('.session');if(!card)return null;return{sessionId:card.dataset.sessionId,ariaLabel:active===card?null:active.getAttribute('aria-label')}}
   function restoreFocus(state){if(!state)return;const card=root.querySelector('[data-session-id="'+CSS.escape(state.sessionId)+'"]');if(!card)return;const target=state.ariaLabel?card.querySelector('[aria-label="'+CSS.escape(state.ariaLabel)+'"]'):card;(target||card).focus()}
-  function renderSessions(){const focus=captureFocus();preserveHoveredResult();render();decorateInstructions();decorateResults();decorateAutoControls();restoreFocus(focus)}
+  function renderSessions(){const focus=captureFocus();preserveHoveredResult();render();decorateRelatedIssues();decorateInstructions();decorateResults();decorateAutoControls();restoreFocus(focus)}
   root.addEventListener('focusin',event=>{const popover=event.target.closest?.('.result-popover');const sessionId=popover?.dataset.resultSession;if(sessionId)openResult(sessionId,popover)});
   root.addEventListener('focusout',event=>{const popover=event.target.closest?.('.result-popover');const sessionId=popover?.dataset.resultSession;if(sessionId)closeResultLater(sessionId)});
   window.addEventListener('message',event=>{if(event.data?.type==='sessions'){sessions=event.data.sessions;selectedRepositoryGroupIds.clear();for(const id of event.data.repositoryGroupFilterIds||[])selectedRepositoryGroupIds.add(id);authentication=event.data.authentication||{status:'checking'};if(composingSessionId){renderPending=true;return}renderSessions()}});

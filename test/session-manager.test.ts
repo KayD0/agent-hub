@@ -450,6 +450,47 @@ test("sending a message steers the active turn", async () => {
   assert.equal(manager.get(session.id)?.lastInstruction, "Focus on failures");
 });
 
+test("attaching an issue steers an active session and persists the relationship", async () => {
+  const gateway = new FakeGateway();
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(gateway, repository);
+  const session = await manager.createSession("C:\\work", "Run tests");
+
+  await manager.attachGitHubIssue(session.id, {
+    repository: "KayD0/agent-hub",
+    number: 18,
+    title: "Issue integration",
+    url: "https://github.com/KayD0/agent-hub/issues/18",
+    worktree: "C:\\work",
+  }, "Handle issue #18");
+
+  assert.equal(gateway.steers.at(-1)?.text, "Handle issue #18");
+  assert.equal(manager.get(session.id)?.relatedIssues[0]?.number, 18);
+  assert.equal(repository.value[0]?.relatedIssues?.[0]?.repository, "KayD0/agent-hub");
+});
+
+test("attaching an issue starts a new turn for an idle session without duplicating the relationship", async () => {
+  const gateway = new FakeGateway();
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(gateway, repository);
+  const session = await manager.createSession("C:\\work", "Finish task");
+  gateway.emitEvent({ method: "turn/completed", params: { threadId: session.threadId, turn: { id: "turn-1", status: "completed" } } });
+  const issue = {
+    repository: "KayD0/agent-hub",
+    number: 18,
+    title: "Issue integration",
+    url: "https://github.com/KayD0/agent-hub/issues/18",
+  };
+
+  await manager.attachGitHubIssue(session.id, issue, "First pass");
+  gateway.emitEvent({ method: "turn/completed", params: { threadId: session.threadId, turn: { id: "turn-2", status: "completed" } } });
+  await manager.attachGitHubIssue(session.id, { ...issue, title: "Updated title" }, "Second pass");
+
+  assert.equal(gateway.turns.at(-1)?.text, "Second pass");
+  assert.equal(manager.get(session.id)?.relatedIssues.length, 1);
+  assert.equal(manager.get(session.id)?.relatedIssues[0]?.title, "Updated title");
+});
+
 test("app-server exit disconnects active sessions without approving pending request", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());

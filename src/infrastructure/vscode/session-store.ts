@@ -39,11 +39,21 @@ function isPersistedSession(value: unknown): value is PersistedSession {
     typeof candidate.title === "string" &&
     typeof candidate.cwd === "string" &&
     (candidate.lastInstruction === undefined || typeof candidate.lastInstruction === "string") &&
+    (candidate.relatedIssues === undefined || (Array.isArray(candidate.relatedIssues) && candidate.relatedIssues.every(isRelatedIssue))) &&
     isSessionStatus(candidate.status) &&
     isAttentionLevel(candidate.attention) &&
     typeof candidate.startedAt === "number" &&
     typeof candidate.updatedAt === "number"
   );
+}
+
+function isRelatedIssue(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.repository === "string" && typeof candidate.number === "number" &&
+    typeof candidate.title === "string" && typeof candidate.url === "string" && typeof candidate.linkedAt === "number" &&
+    (candidate.branch === undefined || typeof candidate.branch === "string") &&
+    (candidate.worktree === undefined || typeof candidate.worktree === "string");
 }
 
 function isPersistedSessionEnvelope(value: unknown): value is PersistedSessionEnvelope {
