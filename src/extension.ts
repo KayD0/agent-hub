@@ -69,7 +69,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath));
     if (session) detailPanel.show(session.id);
   };
-  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), createGroupSession, showError);
+  const openGroupTerminal = async (repositoryId: string): Promise<void> => {
+    const group = repositoryManager.get(repositoryId);
+    if (!group) throw new Error("登録済みフォルダが見つかりません。");
+    const terminal = vscode.window.createTerminal({ name: `AgentHub: ${group.name}`, cwd: group.rootPath });
+    terminal.show();
+  };
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
