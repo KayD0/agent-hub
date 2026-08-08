@@ -189,6 +189,22 @@ test("auto mode keeps unmatched commands pending for manual review", async () =>
   if (pending?.kind === "approval") assert.match(pending.policyReason, /一致しません/);
 });
 
+test("bulk auto mode updates every existing session", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const first = await manager.createSession("C:\\work\\first");
+  const second = await manager.createSession("C:\\work\\second");
+
+  manager.setAllAutoApprove(true);
+  assert.equal(manager.get(first.id)?.autoApprove, true);
+  assert.equal(manager.get(second.id)?.autoApprove, true);
+
+  manager.setAllAutoApprove(false);
+  assert.equal(manager.get(first.id)?.autoApprove, false);
+  assert.equal(manager.get(second.id)?.autoApprove, false);
+});
+
 test("auto mode audits the matched command inside a PowerShell wrapper", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository(), undefined, { allowedCommands: ["git status"], allowedPaths: [] });
