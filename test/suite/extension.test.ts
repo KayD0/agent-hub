@@ -54,6 +54,6 @@ export async function run(): Promise<void> {
     await vscode.commands.executeCommand("agentHub.openRepositoryIssues", repositoryGroupId);
     await vscode.commands.executeCommand("agentHub.removeRepository", repositoryGroupId);
   } finally {
-    await fs.rm(repositoryGroupPath, { recursive: true, force: true });
+    await fs.rm(repositoryGroupPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }

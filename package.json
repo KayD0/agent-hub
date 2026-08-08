@@ -4,6 +4,10 @@
   "description": "Monitor and control multiple Codex app-server sessions from one VS Code view.",
   "version": "0.1.0",
   "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KayD0/agent-hub.git"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
@@ -178,13 +182,15 @@
     "test:protocol": "npm run compile && node --test dist/test/protocol-boundaries.test.js",
     "test:app-server": "npm run compile && node --test dist/test/app-server-client.test.js",
     "test:extension": "npm run compile && node scripts/run-extension-tests.js",
-    "vscode:prepublish": "npm run compile"
+    "vscode:prepublish": "npm run compile",
+    "package:vsix": "vsce package --githubBranch develop --out releases/agenthub-codex.vsix"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.100.0",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^5.9.0"
   },
   "dependencies": {
