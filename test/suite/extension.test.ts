@@ -56,4 +56,27 @@ export async function run(): Promise<void> {
   } finally {
     await fs.rm(repositoryGroupPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
+
+  const recoveryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-recovery-smoke-"));
+  try {
+    const crashPath = path.join(recoveryRoot, "__crash__");
+    const normalPath = path.join(recoveryRoot, "recovered");
+    await fs.mkdir(crashPath);
+    await fs.mkdir(normalPath);
+    const crashed = await vscode.commands.executeCommand("agentHub.startSession", vscode.Uri.file(crashPath));
+    assert.equal(crashed, undefined, "app-server crash is reported without deactivating the extension");
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const recovered = await vscode.commands.executeCommand<{ id: string }>("agentHub.startSession", vscode.Uri.file(normalPath));
+    assert.ok(recovered?.id, "session creation recovers after app-server restart");
+
+    await configuration.update("codexPath", path.join(recoveryRoot, "missing-codex"), vscode.ConfigurationTarget.Global);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(extension.isActive, true, "missing Codex does not deactivate the extension");
+    await configuration.update("codexPath", process.execPath, vscode.ConfigurationTarget.Global);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const redetected = await vscode.commands.executeCommand<{ id: string }>("agentHub.startSession", vscode.Uri.file(normalPath));
+    assert.ok(redetected?.id, "Codex path is re-detected without restarting VS Code");
+  } finally {
+    await fs.rm(recoveryRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
 }

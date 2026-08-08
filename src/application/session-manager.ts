@@ -77,6 +77,14 @@ export class SessionManager {
     await this.gateway.stop();
   }
 
+  public async reconnect(): Promise<void> {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    await this.gateway.stop();
+    this.started = false;
+    await this.initialize();
+  }
+
   public onDidChange(listener: () => void): { dispose(): void } {
     this.events.on("change", listener);
     return { dispose: () => this.events.off("change", listener) };
