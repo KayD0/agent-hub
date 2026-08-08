@@ -82,6 +82,7 @@ export interface ManagedSession {
   attention: AttentionLevel;
   currentActivity?: string;
   finalResult?: string;
+  lastInstruction?: string;
   autoApprove: boolean;
   approvalAudit: ApprovalAuditEntry[];
   currentTurnId?: string;
@@ -101,6 +102,7 @@ export interface PersistedSession {
   attention: AttentionLevel;
   currentActivity?: string;
   finalResult?: string;
+  lastInstruction?: string;
   approvalAudit?: ApprovalAuditEntry[];
   unread: boolean;
   startedAt: number;

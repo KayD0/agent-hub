@@ -116,6 +116,7 @@ export class SessionManager {
       status: prompt ? "starting" : "ready",
       attention: "none",
       currentActivity: prompt ? "ターンを開始しています" : "指示を入力できます",
+      lastInstruction: prompt?.trim() || undefined,
       autoApprove: false,
       approvalAudit: [],
       unread: false,
@@ -143,6 +144,7 @@ export class SessionManager {
     const session = this.requireSession(sessionId);
     if (!session.currentTurnId) throw new Error("実行中のターンがありません。");
     await this.gateway.steerTurn(session.threadId, session.currentTurnId, text);
+    session.lastInstruction = text;
     this.appendActivity(session, "message", "追加入力", text);
     this.setStatus(session, "running", "追加入力を処理中です");
   }
@@ -154,6 +156,7 @@ export class SessionManager {
       return;
     }
 
+    session.lastInstruction = text;
     this.appendActivity(session, "message", "追加指示", text);
     this.setStatus(session, "starting", "新しいターンを開始しています");
     try {

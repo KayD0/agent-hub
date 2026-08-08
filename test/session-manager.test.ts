@@ -121,6 +121,20 @@ test("restoring a session preserves its final result", async () => {
   assert.equal(repository.value[0]?.finalResult, "Implemented the requested change and all tests passed.");
 });
 
+test("restoring a session preserves its last instruction", async () => {
+  const repository = new MemoryRepository();
+  repository.value = [{
+    ...persistedSession("completed", "Completed", 1, "completed"),
+    lastInstruction: "Keep the card compact",
+  }];
+  const manager = new SessionManager(new FakeGateway(), repository);
+
+  await manager.initialize();
+
+  assert.equal(manager.get("completed")?.lastInstruction, "Keep the card compact");
+  assert.equal(repository.value[0]?.lastInstruction, "Keep the card compact");
+});
+
 test("approval request moves session to action required and resolves once", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());
@@ -321,6 +335,7 @@ test("sending the first message starts a turn for a ready session", async () => 
   assert.deepEqual(gateway.turns, [{ threadId: "thread-1", text: "Inspect the project" }]);
   assert.equal(manager.get(session.id)?.status, "running");
   assert.equal(manager.get(session.id)?.currentTurnId, "turn-1");
+  assert.equal(manager.get(session.id)?.lastInstruction, "Inspect the project");
 });
 
 test("completed agent message is retained as the final result", async () => {
@@ -432,6 +447,7 @@ test("sending a message steers the active turn", async () => {
     text: "Focus on failures",
   }]);
   assert.equal(gateway.turns.length, 1);
+  assert.equal(manager.get(session.id)?.lastInstruction, "Focus on failures");
 });
 
 test("app-server exit disconnects active sessions without approving pending request", async () => {

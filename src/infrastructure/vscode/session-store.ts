@@ -38,6 +38,7 @@ function isPersistedSession(value: unknown): value is PersistedSession {
     typeof candidate.threadId === "string" &&
     typeof candidate.title === "string" &&
     typeof candidate.cwd === "string" &&
+    (candidate.lastInstruction === undefined || typeof candidate.lastInstruction === "string") &&
     isSessionStatus(candidate.status) &&
     isAttentionLevel(candidate.attention) &&
     typeof candidate.startedAt === "number" &&
