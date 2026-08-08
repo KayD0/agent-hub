@@ -97,7 +97,8 @@ export class RepositoryDiffPanel implements vscode.Disposable {
         "@media(max-width:700px){body{overflow:auto}.layout{grid-template-columns:1fr;height:auto}nav{max-height:38vh;border-right:0}",
         "@media(max-width:700px){body{overflow:auto}.layout{grid-template-columns:1fr;height:auto}.pane-resizer{display:none}nav{max-height:38vh;border-right:0}",
       )
-      .replace("</script>", `${paneResizerScript()}${fileBrowserScript()}</script>`);
+      .replace("</style>", `${changedFileStyle()}</style>`)
+      .replace("</script>", `${changedFileScript()}${paneResizerScript()}${fileBrowserScript()}</script>`);
   }
 }
 
@@ -109,7 +110,24 @@ function repositoryRows(repository: RepositorySnapshot, selectedKey: string | un
 function fileRow(repository: RepositorySnapshot, file: RepositoryFileChange, selected: boolean): string {
   const stat = file.binary ? "binary" : `+${file.additions ?? 0} −${file.deletions ?? 0}`;
   const key = `${repository.id}::${file.path}`;
-  return `<button class="file" data-path="${escapeHtml(key)}" aria-selected="${selected}" aria-label="${escapeHtml(repository.name)}の${escapeHtml(file.path)}の差分を表示"><span class="kind">${kindLabel(file.kind)}</span><span class="file-path" title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</span><span class="stat">${stat}</span></button>`;
+  const repositoryPath = repository.relativePath === "." ? "" : `${repository.relativePath.replace(/\\/g, "/")}/`;
+  const openPath = `${repositoryPath}${file.path}`;
+  return `<div class="file" data-path="${escapeHtml(key)}" role="button" tabindex="0" aria-selected="${selected}" aria-label="${escapeHtml(repository.name)}の${escapeHtml(file.path)}の差分を表示"><span class="kind">${kindLabel(file.kind)}</span><button class="file-path" data-open-file="${escapeHtml(openPath)}" title="${escapeHtml(file.path)}" aria-label="${escapeHtml(file.path)}をエディターで開く">${escapeHtml(file.path)}</button><span class="stat">${stat}</span></div>`;
+}
+
+function changedFileStyle(): string {
+  return `.file{cursor:pointer}.file-path{min-width:0;padding:0;overflow:hidden;text-align:left;text-overflow:ellipsis;white-space:nowrap;color:inherit;background:transparent;font:inherit;font-size:12px}.file-path:hover{text-decoration:underline}.file-path:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:1px}`;
+}
+
+function changedFileScript(): string {
+  return `
+document.querySelectorAll('[data-path]').forEach(row=>row.addEventListener('keydown',event=>{
+  if(event.target===row&&(event.key==='Enter'||event.key===' ')){event.preventDefault();vscode.postMessage({type:'selectDiff',path:row.dataset.path});}
+}));
+document.querySelectorAll('[data-open-file]').forEach(button=>button.addEventListener('click',event=>{
+  event.stopPropagation();
+  vscode.postMessage({type:'openFile',path:button.dataset.openFile});
+}));`;
 }
 
 function renderTreeEntries(entries: RepositoryTreeEntry[]): string {
