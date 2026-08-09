@@ -29,7 +29,7 @@ export function folderAnalysisPrompt(scope: FolderAnalysisScope, depth: FolderAn
     {
       "title": "課題候補の短いタイトル",
       "description": "利用者への影響と改善する理由",
-      "direction": "採るべき方向性。実装手順ではなく、責務・制約・判断基準を含める",
+      "direction": "この課題への対応方針。実装手順ではなく、責務・制約・判断基準を含める",
       "evidence": ["相対パス:行番号 または確認した具体的事実"],
       "priority": "high | medium | low"
     }
@@ -45,23 +45,23 @@ const COMPETITIVE_FOCUS: Record<CompetitiveAnalysisFocus, string> = {
 };
 
 export function competitiveAnalysisPrompt(focus: CompetitiveAnalysisFocus, depth: FolderAnalysisDepth): string {
-  return `登録フォルダのプロダクトについて競合分析を行い、採るべき対応方針を提案してください。
+  return `登録フォルダのプロダクトについて競合分析を行い、このプロダクトが今後進むべき方向性を提案してください。
 
 最初にREADME、設計資料、主要機能を読み、自プロダクトの対象ユーザーと価値提案を把握してください。その後、必ずWebで最新情報を調査し、直接競合、間接競合、代替手段を区別してください。競合の機能・料金・ポジショニングは公式サイトや公式ドキュメントを優先し、確認日とURLを根拠に含めてください。
 
 分析観点: ${COMPETITIVE_FOCUS[focus]}
 分析深度: ${DEPTH_INSTRUCTIONS[depth]}
 
-競合が強い軸をそのまま模倣するのではなく、誰にとってなぜ選ぶ理由になるか、避けるべき方向、追加調査が必要な未確定事項も考慮してください。このターンではファイル変更、コミット、push、Issue作成などの書き込みは行わないでください。
+個別のコード不備や単発の修正案を中心にしないでください。競合が強い軸をそのまま模倣するのではなく、AgentHubが誰にどの価値を届けるか、どの市場・体験へ重点投資するか、避けるべき方向、追加調査が必要な未確定事項を考慮してください。このターンではファイル変更、コミット、push、Issue作成などの書き込みは行わないでください。
 
 最終結果は説明文を前後に付けず、次の形式のJSONオブジェクトだけを返してください。
 {
-  "summary": "主要競合、比較結果、自プロダクトの強みと全体所見",
+  "summary": "主要競合、比較結果、AgentHubの強みと進むべき方向性の全体所見",
   "candidates": [
     {
-      "title": "対応方針の短いタイトル",
-      "description": "競合状況と、この対応が利用者・事業にもたらす効果",
-      "direction": "採るべきポジショニングまたはプロダクト方針。避けることと判断基準も含める",
+      "title": "方向性の提案を表す短いタイトル",
+      "description": "競合分析から得た示唆と、この方向性が利用者・事業にもたらす効果",
+      "direction": "AgentHubが進むべきプロダクト戦略またはポジショニング。重点投資領域、避けること、判断基準も含める",
       "evidence": ["競合名・確認日・公式URL、または自プロダクトの相対パス:行番号"],
       "priority": "high | medium | low"
     }

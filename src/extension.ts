@@ -92,7 +92,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     detailPanel.show(target.id);
   }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
-  const folderAnalysisPanel = new FolderAnalysisPanel(manager, async (group, candidates) => {
+  const folderAnalysisPanel = new FolderAnalysisPanel(manager, async (group, candidates, analysisKind) => {
     await githubIssueClient.assertReady();
     const snapshot = await repositoryManager.groupSnapshot(group);
     const repositories = await Promise.all(snapshot.repositories.map(async (repository) => {
@@ -112,7 +112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     if (answer !== "Issueを作成") return [];
     const urls: string[] = [];
-    for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate)));
+    for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate, analysisKind)));
     return urls;
   }, showError);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
@@ -152,8 +152,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const group = repositoryManager.get(repositoryId);
     if (!group) throw new Error("登録済みフォルダが見つかりません。");
     const kind = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisKind }>([
-      { label: "$(search) 課題と改善方向を分析", description: "コードや設定から課題を特定し、進むべき方向性を提案", value: "issues" },
-      { label: "$(globe) 競合と対応方針を分析", description: "最新の市場情報と比較し、差別化・対応方針を提案", value: "competitive" },
+      { label: "$(search) 課題と対応方針を分析", description: "コードや設定から課題を特定し、課題ごとの対応方針を提案", value: "issues" },
+      { label: "$(globe) 競合から進むべき方向性を分析", description: "市場・競合との比較から、AgentHubの差別化と進む方向を提案", value: "competitive" },
     ], { title: `${group.name}: 分析の種類`, placeHolder: "分析方法を選択" });
     if (!kind) return;
     let scope: FolderAnalysisScope = "all";
@@ -477,9 +477,10 @@ function issuePrompt(issue: import("./domain/github-issue").GitHubIssue): string
   return `GitHub Issue ${issue.repository.slug}#${issue.number} に対応してください。\n\nタイトル: ${issue.title}\nURL: ${issue.url}\n\n本文:\n${issueBody || "（本文なし）"}`;
 }
 
-function folderAnalysisIssueBody(candidate: FolderAnalysisCandidate): string {
+function folderAnalysisIssueBody(candidate: FolderAnalysisCandidate, analysisKind: FolderAnalysisKind): string {
   const evidence = candidate.evidence.length ? candidate.evidence.map((item) => `- ${item}`).join("\n") : "- 根拠なし";
-  return `## 概要\n\n${candidate.description}\n\n## 背景・根拠\n\n${evidence}\n\n## 方針\n\n${candidate.direction}\n\n## 制約\n\n- 既存の利用者向け動作とデータを維持する。\n- 実装前に記載した根拠が現在も有効か確認する。\n\n## 非対象\n\n- この課題と直接関係しない機能変更。\n\n## 受け入れ条件\n\n- 記載した課題が再現または確認できる。\n- 方針に沿った変更で課題が解消される。\n- 関連する既存テストと追加テストが成功する。\n\n優先度: ${candidate.priority}`;
+  const heading = analysisKind === "competitive" ? "## AgentHubが進むべき方向性" : "## 課題への対応方針";
+  return `## 概要\n\n${candidate.description}\n\n## 背景・根拠\n\n${evidence}\n\n${heading}\n\n${candidate.direction}\n\n## 制約\n\n- 既存の利用者向け動作とデータを維持する。\n- 実行前に記載した根拠が現在も有効か確認する。\n\n## 非対象\n\n- この提案と直接関係しない変更。\n\n## 受け入れ条件\n\n- 記載した根拠を再確認できる。\n- 提案した方針に沿った成果を評価できる。\n- 必要な検証方法または評価指標が定義される。\n\n優先度: ${candidate.priority}`;
 }
 
 function isInside(candidate: string, root: string): boolean {

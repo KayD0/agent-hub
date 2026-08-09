@@ -19,7 +19,7 @@ export class FolderAnalysisPanel implements vscode.Disposable {
 
   public constructor(
     private readonly sessions: SessionManager,
-    private readonly createIssues: (group: RegisteredRepository, candidates: readonly FolderAnalysisCandidate[]) => Promise<readonly string[]>,
+    private readonly createIssues: (group: RegisteredRepository, candidates: readonly FolderAnalysisCandidate[], kind: FolderAnalysisKind) => Promise<readonly string[]>,
     private readonly onError: (error: unknown) => void,
   ) {
     this.subscription = sessions.onDidChange((change) => {
@@ -80,7 +80,7 @@ export class FolderAnalysisPanel implements vscode.Disposable {
       const indexes = [...new Set(message.indexes.filter((item): item is number => Number.isInteger(item) && Number(item) >= 0))];
       const candidates = indexes.flatMap((index) => result.candidates[index] ? [result.candidates[index]] : []);
       if (!candidates.length) throw new Error("Issue化する課題を選択してください。");
-      const urls = await this.createIssues(run.group, candidates);
+      const urls = await this.createIssues(run.group, candidates, run.kind);
       if (urls.length) void vscode.window.showInformationMessage(`${urls.length}件のIssueを作成しました。`);
     } catch (error) { this.onError(error); }
   }
@@ -100,8 +100,10 @@ function renderHtml(run: AnalysisRun, status: string, activity?: string, finalRe
   } else if (!parsed.candidates.length) {
     content = `<div class="state empty"><h2>課題候補はありません</h2><p>${escapeHtml(parsed.summary || "指定した条件では課題が見つかりませんでした。")}</p></div>`;
   } else {
-    const candidates = parsed.candidates.map((candidate, index) => `<label class="candidate"><input type="checkbox" data-candidate="${index}"><span class="candidate-body"><span class="candidate-heading"><strong>${escapeHtml(candidate.title)}</strong><span class="priority ${candidate.priority}">${priorityLabel(candidate.priority)}</span></span><span class="description">${escapeHtml(candidate.description)}</span><span class="evidence-title">進むべき方向性</span><span class="description">${escapeHtml(candidate.direction)}</span><span class="evidence-title">根拠</span><ul>${candidate.evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></span></label>`).join("");
-    content = `<section class="summary"><h2>分析結果</h2><p>${escapeHtml(parsed.summary)}</p></section><div class="selection"><span id="selected-count">0件選択</span><button id="select-all" class="secondary">すべて選択</button><button id="clear" class="secondary">クリア</button><button id="create-issues">選択項目をIssue化</button></div><div class="candidates">${candidates}</div>`;
+    const directionLabel = run.kind === "competitive" ? "AgentHubが進むべき方向性" : "課題への対応方針";
+    const candidates = parsed.candidates.map((candidate, index) => `<label class="candidate"><input type="checkbox" data-candidate="${index}"><span class="candidate-body"><span class="candidate-heading"><strong>${escapeHtml(candidate.title)}</strong><span class="priority ${candidate.priority}">${priorityLabel(candidate.priority)}</span></span><span class="description">${escapeHtml(candidate.description)}</span><span class="evidence-title">${directionLabel}</span><span class="description">${escapeHtml(candidate.direction)}</span><span class="evidence-title">根拠</span><ul>${candidate.evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></span></label>`).join("");
+    const resultLabel = run.kind === "competitive" ? "競合分析から導いた方向性" : "課題分析結果";
+    content = `<section class="summary"><h2>${resultLabel}</h2><p>${escapeHtml(parsed.summary)}</p></section><div class="selection"><span id="selected-count">0件選択</span><button id="select-all" class="secondary">すべて選択</button><button id="clear" class="secondary">クリア</button><button id="create-issues">選択項目をIssue化</button></div><div class="candidates">${candidates}</div>`;
   }
   const scope = run.kind === "competitive"
     ? { positioning: "ポジショニング", features: "機能", pricing: "料金", all: "総合" }[run.competitiveFocus ?? "all"]

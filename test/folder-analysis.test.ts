@@ -15,7 +15,8 @@ test("competitive analysis prompt requires current primary sources and a respons
   assert.match(prompt, /必ずWebで最新情報/);
   assert.match(prompt, /公式サイトや公式ドキュメント/);
   assert.match(prompt, /直接競合、間接競合、代替手段/);
-  assert.match(prompt, /採るべきポジショニングまたはプロダクト方針/);
+  assert.match(prompt, /AgentHubが進むべきプロダクト戦略またはポジショニング/);
+  assert.match(prompt, /個別のコード不備や単発の修正案を中心にしない/);
 });
 
 test("folder analysis result parses a fenced JSON response", () => {
