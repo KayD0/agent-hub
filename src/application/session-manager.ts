@@ -191,6 +191,23 @@ export class SessionManager {
     this.setStatus(session, "interrupted", "利用者が処理を中断しました");
   }
 
+  public async attachFolderAnalysisOrigin(
+    sessionId: string,
+    repositoryGroupId: string,
+    repositoryName: string,
+    rootPath: string,
+    scope?: "changes" | "important" | "all",
+    depth?: "quick" | "standard" | "deep",
+  ): Promise<void> {
+    const session = this.requireSession(sessionId);
+    session.origin = { kind: "folder_analysis", repositoryGroupId, repositoryName, rootPath, scope, depth };
+    session.title = `課題分析: ${repositoryName}`;
+    this.appendActivity(session, "system", `登録フォルダ「${repositoryName}」の課題分析`, rootPath);
+    session.updatedAt = Date.now();
+    this.emitChange(session.id);
+    await this.persist();
+  }
+
   public resolveApproval(sessionId: string, decision: "accept" | "acceptForSession" | "decline"): void {
     const session = this.requireSession(sessionId);
     const pending = session.pendingInteraction;

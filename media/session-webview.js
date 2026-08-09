@@ -127,6 +127,10 @@
     head.append(handle, main, el("span", "status"), el("div", "header-actions"));
     card.append(head);
 
+    const origin = el("div", "session-origin");
+    origin.hidden = true;
+    card.append(origin);
+
     const relatedIssues = el("div", "last-instruction related-issues");
     relatedIssues.hidden = true;
     card.append(relatedIssues);
@@ -136,7 +140,10 @@
 
     const quickActions = el("div", "card-quick-actions");
     const inputPopover = createInputPopover(card);
-    quickActions.append(inputPopover);
+    const analysisResult = button("分析結果", "課題分析結果を候補一覧で表示", () => vscode.postMessage({ type: "openAnalysisResult", sessionId: card.dataset.sessionId }), true);
+    analysisResult.className = "analysis-result-toggle";
+    analysisResult.hidden = true;
+    quickActions.append(analysisResult, inputPopover);
     card.append(quickActions, el("div", "pending-slot"));
     return card;
   }
@@ -204,10 +211,30 @@
     textarea.dataset.session = session.id;
     textarea.setAttribute("aria-label", session.title + "への指示");
     updateHeaderActions(card, session);
+    updateOrigin(card, session);
+    updateAnalysisResult(card, session);
     updateRelatedIssues(card, session);
     updateInstruction(card, session);
     updateResult(card, session);
     updatePending(card, session);
+  }
+
+  function updateOrigin(card, session) {
+    const node = card.querySelector(".session-origin");
+    const origin = session.origin?.kind === "folder_analysis" ? session.origin : undefined;
+    node.hidden = !origin;
+    node.textContent = origin ? "課題分析 · " + origin.repositoryName : "";
+    node.title = origin?.rootPath || "";
+    if (origin) node.setAttribute("aria-label", "課題分析の対象フォルダ: " + origin.repositoryName + "、" + origin.rootPath);
+    else node.removeAttribute("aria-label");
+  }
+
+  function updateAnalysisResult(card, session) {
+    const button = card.querySelector(".analysis-result-toggle");
+    const available = session.origin?.kind === "folder_analysis";
+    button.hidden = !available;
+    button.disabled = !available;
+    if (available) button.setAttribute("aria-label", session.origin.repositoryName + "の課題分析結果を表示");
   }
 
   function updateHeaderActions(card, session) {

@@ -34,6 +34,17 @@ export class GitHubIssueClient {
       throw new Error(githubIssueError(message));
     }
   }
+
+  public async createIssue(repository: GitHubRepositoryRef, title: string, body: string): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync("gh", ["issue", "create", "--repo", repository.slug, "--title", title, "--body", body], { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024 });
+      const url = stdout.trim();
+      if (!/^https:\/\/github\.com\//i.test(url)) throw new Error("作成結果からIssue URLを取得できませんでした。");
+      return url;
+    } catch (error) {
+      throw new Error(githubIssueError(errorMessage(error)));
+    }
+  }
 }
 
 export function parseGitHubRemote(value: string): Pick<GitHubRepositoryRef, "owner" | "name" | "slug"> | undefined {

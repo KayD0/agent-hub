@@ -6,7 +6,7 @@ import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
 
-type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "relatedIssues" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
+type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "origin" | "relatedIssues" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
 type RepositoryGroupFilter = { id: string; name: string; rootPath: string };
 
 interface WebviewMessage {
@@ -31,6 +31,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     private readonly manager: SessionManager,
     private readonly authentication: AuthenticationManager,
     private readonly openSession: (sessionId: string) => void,
+    private readonly openAnalysisResult: (sessionId: string) => void,
     private readonly listRepositoryGroups: () => readonly RepositoryGroupFilter[],
     private readonly state: vscode.Memento,
     private readonly extensionUri: vscode.Uri,
@@ -119,13 +120,14 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
 
   private snapshot(): SessionViewModel[] {
     const groups = this.listRepositoryGroups();
-    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, relatedIssues, autoApprove, pendingInteraction, cwd }) => ({
+    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, origin, relatedIssues, autoApprove, pendingInteraction, cwd }) => ({
       id,
       title,
       status,
       currentActivity: status === "starting" || status === "running" ? "処理中" : currentActivity,
       finalResult,
       lastInstruction,
+      origin,
       relatedIssues,
       autoApprove,
       pendingInteraction,
@@ -145,6 +147,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());
       else if (message.type === "autoApprove" && typeof message.enabled === "boolean") this.manager.setAutoApprove(sessionId, message.enabled);
       else if (message.type === "open") { this.manager.markRead(sessionId); this.openSession(sessionId); }
+      else if (message.type === "openAnalysisResult") this.openAnalysisResult(sessionId);
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);
       else if (message.type === "remove") await this.manager.remove(sessionId);
       else if (message.type === "approval" && isDecision(message.decision)) this.manager.resolveApproval(sessionId, message.decision);
