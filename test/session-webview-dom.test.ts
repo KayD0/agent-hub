@@ -152,6 +152,16 @@ test("session Auto toggle posts the stable approval contract", async (context) =
   assert.equal(dom.window.document.querySelector<HTMLInputElement>(".auto-control input")?.checked, true);
 });
 
+test("running session places interrupt before Auto", async (context) => {
+  const { dom } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one", { status: "running" })]);
+
+  const actions = [...dom.window.document.querySelector(".header-actions")!.children];
+  assert.deepEqual(actions.map((node) => node.className), ["secondary header-action", "auto-control"]);
+  assert.equal(actions.map((node) => node.textContent?.trim()).join("|"), "中断|Auto");
+});
+
 test("session details open from the card without a dedicated button", async (context) => {
   const { dom, posted } = await createWebview();
   context.after(() => dom.window.close());
