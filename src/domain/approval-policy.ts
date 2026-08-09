@@ -61,7 +61,7 @@ function evaluateCommand(policy: AutoApprovalPolicy, command: string | undefined
         matchedRule: `command:${matched}`,
         matchedCommand: wrapped.command,
       }
-    : { autoApprove: false, reason: "登録済みコマンドと一致しません" };
+    : { autoApprove: false, reason: "Codex rulesの許可条件と一致しません。承認が必要です" };
 }
 
 function unwrapPowerShellGitCommand(value: string): { recognized: boolean; command?: string } {
@@ -100,7 +100,7 @@ function evaluateFileChange(
   });
   return matched
     ? { autoApprove: true, reason: "許可されたパス配下のファイル変更です", matchedRule: `path:${matched}` }
-    : { autoApprove: false, reason: "許可されたパスに一致しません" };
+    : { autoApprove: false, reason: "CodexのSandbox境界を越えるため承認が必要です" };
 }
 
 function isInside(candidate: string, root: string): boolean {

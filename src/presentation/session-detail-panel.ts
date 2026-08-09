@@ -71,7 +71,7 @@ export class SessionDetailPanel implements vscode.Disposable {
     const nonce = randomNonce();
     const pending = session.pendingInteraction;
     const approvalHtml = pending?.kind === "approval"
-      ? `<section class="attention"><h2>${escapeHtml(pending.title)}</h2><p>${escapeHtml(pending.command ?? pending.description ?? "内容を確認してください")}</p><p class="policy-reason"><strong>ポリシー判定:</strong> ${escapeHtml(pending.policyReason)}</p><div class="actions"><button data-decision="accept">今回のみ許可</button>${pending.allowForSession ? '<button data-decision="acceptForSession">このセッションで許可</button>' : ""}<button class="secondary" data-decision="decline">拒否</button></div></section>`
+      ? `<section class="attention"><h2>${escapeHtml(pending.title)}</h2><p>${escapeHtml(pending.command ?? pending.description ?? "内容を確認してください")}</p><p class="policy-reason"><strong>Codex承認:</strong> ${escapeHtml(pending.policyReason)}</p><div class="actions"><button data-decision="accept">今回のみ許可</button>${pending.allowForSession ? '<button data-decision="acceptForSession">このセッションで許可</button>' : ""}<button class="secondary" data-decision="decline">拒否</button></div></section>`
       : pending?.kind === "input"
         ? `<section class="attention"><h2>${escapeHtml(pending.title)}</h2><p>回答はサイドバーのセッション項目を展開するか、コマンドから入力してください。</p></section>`
         : "";

@@ -80,16 +80,6 @@
         "icon": "$(filter)"
       },
       {
-        "command": "agentHub.enableBulkAuto",
-        "title": "一括Autoを有効にする",
-        "icon": "$(circle-large-outline)"
-      },
-      {
-        "command": "agentHub.disableBulkAuto",
-        "title": "一括Autoを無効にする",
-        "icon": "$(pass-filled)"
-      },
-      {
         "command": "agentHub.openSession",
         "title": "AgentHub: セッション詳細を開く"
       },
@@ -112,6 +102,11 @@
       {
         "command": "agentHub.openSetup",
         "title": "AgentHub: セットアップと診断"
+      },
+      {
+        "command": "agentHub.openCodexRules",
+        "title": "AgentHub: Codex rulesを開く",
+        "icon": "$(law)"
       },
       {
         "command": "agentHub.redetectEnvironment",
@@ -149,13 +144,8 @@
           "group": "navigation@2"
         },
         {
-          "command": "agentHub.enableBulkAuto",
-          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && !agentHub.bulkAutoEnabled",
-          "group": "navigation@3"
-        },
-        {
-          "command": "agentHub.disableBulkAuto",
-          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && agentHub.bulkAutoEnabled",
+          "command": "agentHub.openCodexRules",
+          "when": "view == agentHub.sessions",
           "group": "navigation@3"
         },
         {
@@ -200,22 +190,6 @@
           "type": "boolean",
           "default": true,
           "description": "Show notifications when a session fails."
-        },
-        "agentHub.autoApprove.allowedCommands": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Auto-approve command lines that exactly match an entry while session Auto mode is enabled. A single Git command wrapped by PowerShell -Command is matched against its inner command. Compound, destructive, and direct network commands still require confirmation."
-        },
-        "agentHub.autoApprove.allowedPaths": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Auto-approve file change grants only under these paths while session Auto mode is enabled. Use ${sessionRoot} for the session working folder."
         }
       }
     }

@@ -1,10 +1,10 @@
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { AuthenticationManager } from "./application/authentication-manager";
 import { SessionManager } from "./application/session-manager";
 import { RepositoryManager } from "./application/repository-manager";
-import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
 import { RepositoryFileReader } from "./infrastructure/filesystem/repository-file-reader";
@@ -31,7 +31,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const readCodexPath = () => vscode.workspace.getConfiguration("agentHub").get<string>("codexPath")?.trim() || undefined;
   const codexPath = readCodexPath();
   const codexArgs = vscode.workspace.getConfiguration("agentHub").get<string[]>("codexArgs", []);
-  const autoApprovalPolicy = readAutoApprovalPolicy();
   await logger.info("Extension activation started", { codexPath: codexPath ?? "PATH:codex" });
   const gateway = new AppServerClient(readCodexPath, (message) => void logger?.info("Codex app-server event", summarizeAppServerLog(message)), codexArgs);
   const authentication = new AuthenticationManager(gateway);
@@ -86,7 +85,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showInformationMessage(`Issue ${issue.repository.slug}#${issue.number} を「${target.title}」へ渡しました。`);
     detailPanel.show(target.id);
   }, showError);
-  manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
+  manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState));
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
@@ -144,8 +143,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.logout", () => authentication.logout()),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh(true)),
     vscode.commands.registerCommand("agentHub.filterSessionsByRepository", () => sessionsView.selectRepositoryGroups()),
-    vscode.commands.registerCommand("agentHub.enableBulkAuto", () => sessionsView.setAllAutoApprove(true)),
-    vscode.commands.registerCommand("agentHub.disableBulkAuto", () => sessionsView.setAllAutoApprove(false)),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
     vscode.commands.registerCommand("agentHub.addRepository", (candidate?: vscode.Uri) => addRepository(candidate)),
     vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),
@@ -153,6 +150,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.refreshRepositories", () => repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.removeRepository", async (repositoryId: string) => { await repositoryManager.remove(repositoryId); await repositoriesView.refresh(); }),
     vscode.commands.registerCommand("agentHub.openSetup", () => showSetup(context, authentication, output)),
+    vscode.commands.registerCommand("agentHub.openCodexRules", () => openCodexRules().catch(showError)),
     vscode.commands.registerCommand("agentHub.redetectEnvironment", () => showSetup(context, authentication, output)),
     vscode.commands.registerCommand("agentHub.showLogs", () => output.show(true)),
     vscode.commands.registerCommand("agentHub.exportDiagnostics", () => exportDiagnostics(context, authentication)),
@@ -355,13 +353,31 @@ function showError(error: unknown): void {
   void vscode.window.showErrorMessage(`AgentHub: ${message}`);
 }
 
-function readAutoApprovalPolicy(): AutoApprovalPolicy {
-  const config = vscode.workspace.getConfiguration("agentHub.autoApprove");
-  return {
-    allowedCommands: config.get<string[]>("allowedCommands", []),
-    allowedPaths: config.get<string[]>("allowedPaths", []),
-  };
+async function openCodexRules(): Promise<void> {
+  const codexHome = process.env.CODEX_HOME?.trim()
+    ? path.resolve(process.env.CODEX_HOME.trim())
+    : path.join(os.homedir(), ".codex");
+  if (!codexHome || codexHome === path.parse(codexHome).root) {
+    throw new Error("Codexの設定フォルダを特定できません。CODEX_HOMEを設定してください。");
+  }
+
+  const rulesDirectory = path.join(codexHome, "rules");
+  const rulesFile = path.join(rulesDirectory, "default.rules");
+  await fs.mkdir(rulesDirectory, { recursive: true });
+  try {
+    await fs.writeFile(
+      rulesFile,
+      "# Codex command rules\n# Changes apply after Codex restarts.\n# See: https://learn.chatgpt.com/docs/agent-configuration/rules\n",
+      { encoding: "utf8", flag: "wx" },
+    );
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+  }
+  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(rulesFile));
+  await vscode.window.showTextDocument(document, { preview: false });
+  void vscode.window.showInformationMessage("Codex rulesの変更はCodexの再起動後に反映されます。");
 }
+
 
 function samePath(left: string, right: string): boolean {
   return path.resolve(left).toLocaleLowerCase() === path.resolve(right).toLocaleLowerCase();
