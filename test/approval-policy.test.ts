@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as path from "node:path";
 import test from "node:test";
 import { evaluateAutoApproval } from "../src/domain/approval-policy";
 
@@ -131,16 +132,34 @@ test("PowerShell wrappers fail closed for unsafe or unparseable commands", () =>
 });
 
 test("file changes require both session containment and an allowed path", () => {
+  const fixtureRoot = path.resolve("approval-policy-fixtures");
+  const sessionRoot = path.join(fixtureRoot, "session");
+  const allowedRoot = path.join(sessionRoot, "src");
+  const allowedTarget = path.join(allowedRoot, "feature.ts");
+  const disallowedSessionTarget = path.join(sessionRoot, "docs", "notes.md");
+  const outsideTarget = path.join(fixtureRoot, "outside", "file.ts");
+  const similarSiblingTarget = path.join(fixtureRoot, "session-copy", "file.ts");
   const policy = { allowedCommands: [], allowedPaths: ["${sessionRoot}"] };
+
   assert.equal(evaluateAutoApproval(policy, {
     operation: "file_change",
-    sessionRoot: "C:\\work",
-    targetPath: "C:\\work\\src",
+    sessionRoot,
+    targetPath: allowedTarget,
   }).autoApprove, true);
   assert.equal(evaluateAutoApproval(policy, {
     operation: "file_change",
-    sessionRoot: "C:\\work",
-    targetPath: "C:\\outside",
+    sessionRoot,
+    targetPath: outsideTarget,
+  }).autoApprove, false);
+  assert.equal(evaluateAutoApproval(policy, {
+    operation: "file_change",
+    sessionRoot,
+    targetPath: similarSiblingTarget,
+  }).autoApprove, false);
+  assert.equal(evaluateAutoApproval({ allowedCommands: [], allowedPaths: [allowedRoot] }, {
+    operation: "file_change",
+    sessionRoot,
+    targetPath: disallowedSessionTarget,
   }).autoApprove, false);
 });
 
