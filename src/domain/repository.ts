@@ -45,3 +45,12 @@ export interface RepositoryTreeEntry {
   path: string;
   kind: "directory" | "file";
 }
+
+export interface RepositoryCommit {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  authoredAt: string;
+  references: string[];
+}

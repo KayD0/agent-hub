@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { promisify } from "node:util";
-import { RepositoryFileChange } from "../../domain/repository";
+import { RepositoryCommit, RepositoryFileChange } from "../../domain/repository";
 
 const execFileAsync = promisify(execFile);
 
@@ -65,6 +65,25 @@ export class GitRepositoryReader {
     return this.git(rootPath, ["diff", "--no-color", "--no-ext-diff", "HEAD", "--", change.originalPath ?? change.path, change.path]);
   }
 
+  public async readHistory(rootPath: string, limit = 20): Promise<RepositoryCommit[]> {
+    const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
+    const output = await this.git(rootPath, ["log", "-z", `--max-count=${safeLimit}`, "--date=iso-strict", "--pretty=format:%H%x00%h%x00%an%x00%aI%x00%D%x00%s"]);
+    return parseGitHistory(output);
+  }
+
+  public async readCommitFiles(rootPath: string, hash: string): Promise<RepositoryFileChange[]> {
+    if (!/^[0-9a-f]{40}$/i.test(hash)) throw new Error("コミットIDの形式が不正です。");
+    const output = await this.git(rootPath, ["diff-tree", "-m", "--first-parent", "--root", "--no-commit-id", "--name-status", "-r", "-z", hash, "--"]);
+    return parseCommitFiles(output);
+  }
+
+  public async readCommitFileDiff(rootPath: string, hash: string, relativePath: string): Promise<string> {
+    if (!/^[0-9a-f]{40}$/i.test(hash)) throw new Error("コミットIDの形式が不正です。");
+    if (!relativePath) throw new Error("ファイルパスが指定されていません。");
+    assertInside(rootPath, relativePath);
+    return this.git(rootPath, ["show", "--no-color", "--no-ext-diff", "--first-parent", "--format=", "--patch", hash, "--", relativePath]);
+  }
+
   private async git(cwd: string, args: string[]): Promise<string> {
     const result = await execFileAsync("git", args, {
       cwd,
@@ -75,6 +94,44 @@ export class GitRepositoryReader {
     });
     return result.stdout;
   }
+}
+
+export function parseGitHistory(output: string): RepositoryCommit[] {
+  const fields = output.split("\0");
+  const commits: RepositoryCommit[] = [];
+  for (let index = 0; index + 5 < fields.length; index += 6) {
+    const [hash, shortHash, author, authoredAt, references, subject] = fields.slice(index, index + 6);
+    if (!hash || !shortHash || !author || !authoredAt) continue;
+    commits.push({
+      hash,
+      shortHash,
+      author,
+      authoredAt,
+      subject,
+      references: references.split(",").map((item) => item.trim()).filter(Boolean),
+    });
+  }
+  return commits;
+}
+
+export function parseCommitFiles(output: string): RepositoryFileChange[] {
+  const fields = output.split("\0");
+  const files: RepositoryFileChange[] = [];
+  for (let index = 0; index < fields.length;) {
+    const status = fields[index++];
+    if (!status) continue;
+    if (status.startsWith("R") || status.startsWith("C")) {
+      const originalPath = fields[index++];
+      const filePath = fields[index++];
+      if (originalPath && filePath) files.push({ path: filePath, originalPath, kind: "renamed", binary: false });
+      continue;
+    }
+    const filePath = fields[index++];
+    if (!filePath) continue;
+    const kind = status.startsWith("A") ? "added" : status.startsWith("D") ? "deleted" : "modified";
+    files.push({ path: filePath, kind, binary: false });
+  }
+  return files;
 }
 
 export function parsePorcelainStatus(output: string): RepositoryFileChange[] {
