@@ -83,7 +83,11 @@ export class RepositoryDiffPanel implements vscode.Disposable {
         const repository = this.manager.get(repositoryId);
         if (repository) {
           const uri = vscode.Uri.file(await this.files.resolveFile(repository.rootPath, message.path));
-          await vscode.commands.executeCommand("vscode.open", uri);
+          if (uri.fsPath.toLowerCase().endsWith(".drawio") && vscode.extensions.getExtension("hediet.vscode-drawio")) {
+            await vscode.commands.executeCommand("vscode.openWith", uri, "hediet.vscode-drawio-text");
+          } else {
+            await vscode.commands.executeCommand("vscode.open", uri);
+          }
         }
       }
     } catch (error) { this.onError(error); }
