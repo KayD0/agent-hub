@@ -324,6 +324,18 @@ test("turn completion updates status", async () => {
   assert.equal(manager.get(session.id)?.unread, true);
 });
 
+test("high-frequency deltas identify the changed session", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  const changes: Array<{ sessionId?: string; kind: string }> = [];
+  manager.onDidChange((change) => changes.push(change));
+  await manager.createSession("C:\\work\\app");
+
+  gateway.emitEvent({ method: "item/agentMessage/delta", params: { threadId: "thread-1", delta: "生成中" } });
+
+  assert.deepEqual(changes.at(-1), { sessionId: "thread-1", kind: "delta" });
+});
+
 test("creating a session without a prompt leaves it ready without starting a turn", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());

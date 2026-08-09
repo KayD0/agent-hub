@@ -8,11 +8,17 @@ const URGENT_STATUSES = new Set(["waiting_for_approval", "waiting_for_input", "c
 
 interface PanelState {
   panel: vscode.WebviewPanel;
-  activityHtml: WeakMap<SessionActivity, string>;
+  renderCache: DetailRenderCache;
   lastSnapshot?: string;
   lastStatus?: string;
   timer?: NodeJS.Timeout;
   dirty: boolean;
+}
+
+interface DetailRenderCache {
+  activityHtml: WeakMap<SessionActivity, string>;
+  objectKeys: WeakMap<object, string>;
+  nextKey: number;
 }
 
 export class SessionDetailPanel implements vscode.Disposable {
@@ -41,7 +47,7 @@ export class SessionDetailPanel implements vscode.Disposable {
       "agentHub.sessionDetail", `AgentHub: ${session.title}`, vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [this.extensionUri] },
     );
-    const state: PanelState = { panel, activityHtml: new WeakMap(), dirty: true };
+    const state: PanelState = { panel, renderCache: { activityHtml: new WeakMap(), objectKeys: new WeakMap(), nextKey: 1 }, dirty: true };
     this.panels.set(sessionId, state);
     panel.onDidDispose(() => { if (state.timer) clearTimeout(state.timer); this.panels.delete(sessionId); });
     panel.onDidChangeViewState(() => { if (panel.visible && state.dirty) this.postUpdate(sessionId, state, true); });
@@ -81,7 +87,7 @@ export class SessionDetailPanel implements vscode.Disposable {
   private postUpdate(sessionId: string, state: PanelState, force = false): void {
     const session = this.manager.get(sessionId);
     if (!session) { state.panel.dispose(); return; }
-    const snapshot = detailSnapshot(session, state.activityHtml);
+    const snapshot = detailSnapshot(session, state.renderCache);
     const serialized = JSON.stringify(snapshot);
     state.dirty = false;
     state.lastStatus = session.status;
@@ -92,20 +98,28 @@ export class SessionDetailPanel implements vscode.Disposable {
   }
 }
 
-export function detailSnapshot(session: ManagedSession, cache = new WeakMap<SessionActivity, string>()) {
+export function detailSnapshot(session: ManagedSession, cache: DetailRenderCache = { activityHtml: new WeakMap(), objectKeys: new WeakMap(), nextKey: 1 }) {
   return {
     id: session.id, title: session.title, status: session.status, currentActivity: session.currentActivity ?? "", cwd: session.cwd,
     canInterrupt: ["starting", "running", "waiting_for_input"].includes(session.status),
     attentionHtml: renderAttention(session),
-    activities: session.activities.slice().reverse().map((activity, reverseIndex) => ({
-      key: `${activity.timestamp}-${session.activities.length - reverseIndex - 1}`,
-      html: cachedActivityHtml(activity, cache),
+    activities: session.activities.slice().reverse().map((activity) => ({
+      key: objectKey(activity, cache, "activity"),
+      html: cachedActivityHtml(activity, cache.activityHtml),
     })),
-    audits: session.approvalAudit.slice().reverse().map((entry, reverseIndex) => ({
-      key: `${entry.timestamp}-${session.approvalAudit.length - reverseIndex - 1}`,
+    audits: session.approvalAudit.slice().reverse().map((entry) => ({
+      key: objectKey(entry, cache, "audit"),
       html: `<td>${escapeHtml(new Date(entry.timestamp).toLocaleString())}</td><td>${escapeHtml(auditDecisionLabel(entry.decision))}</td><td>${escapeHtml(entry.subject ?? "-")}</td><td>${escapeHtml(entry.reason)}</td><td>${escapeHtml(entry.matchedRule ?? "-")}</td>`,
     })),
   };
+}
+
+function objectKey(value: object, cache: DetailRenderCache, prefix: string): string {
+  const existing = cache.objectKeys.get(value);
+  if (existing) return existing;
+  const key = `${prefix}-${cache.nextKey++}`;
+  cache.objectKeys.set(value, key);
+  return key;
 }
 
 function cachedActivityHtml(activity: SessionActivity, cache: WeakMap<SessionActivity, string>): string {
