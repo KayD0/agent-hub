@@ -80,6 +80,16 @@
         "icon": "$(filter)"
       },
       {
+        "command": "agentHub.enableBulkAuto",
+        "title": "一括Autoを有効にする",
+        "icon": "$(circle-large-outline)"
+      },
+      {
+        "command": "agentHub.disableBulkAuto",
+        "title": "一括Autoを無効にする",
+        "icon": "$(pass-filled)"
+      },
+      {
         "command": "agentHub.openSession",
         "title": "AgentHub: セッション詳細を開く"
       },
@@ -149,6 +159,16 @@
           "group": "navigation@3"
         },
         {
+          "command": "agentHub.enableBulkAuto",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && !agentHub.bulkAutoEnabled",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agentHub.disableBulkAuto",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && agentHub.bulkAutoEnabled",
+          "group": "navigation@4"
+        },
+        {
           "command": "agentHub.addRepository",
           "when": "view == agentHub.repositories",
           "group": "navigation@1"
@@ -190,6 +210,19 @@
           "type": "boolean",
           "default": true,
           "description": "Show notifications when a session fails."
+        },
+        "agentHub.autoApprove.allowedCommands": {
+          "type": "array", "items": { "type": "string" }, "default": [],
+          "description": "Auto承認するコマンドの完全一致リスト。"
+        },
+        "agentHub.autoApprove.allowedCommandPrefixes": {
+          "type": "array", "items": { "type": "string" },
+          "default": ["git status", "git diff", "git log", "git branch", "git add", "git commit", "git push", "gh issue", "gh pr"],
+          "description": "Auto承認するコマンド接頭辞。force push、削除、reset --hard、cleanは一致しても手動確認になります。"
+        },
+        "agentHub.autoApprove.allowedPaths": {
+          "type": "array", "items": { "type": "string" }, "default": ["${sessionRoot}"],
+          "description": "Auto承認するファイル変更パス。${sessionRoot}はセッションの作業フォルダです。"
         }
       }
     }

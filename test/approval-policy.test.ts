@@ -29,7 +29,7 @@ test("deletion and direct network commands always require confirmation even when
 });
 
 test("git commands can be auto-approved by repository policy", () => {
-  for (const command of ["git push origin main", "git reset --hard"]) {
+  for (const command of ["git push origin main", "git status --short"]) {
     const result = evaluateAutoApproval({ allowedCommands: [command], allowedPaths: [] }, {
       operation: "command",
       sessionRoot: "C:\\work",
@@ -38,6 +38,26 @@ test("git commands can be auto-approved by repository policy", () => {
     assert.equal(result.autoApprove, true, command);
     assert.equal(result.matchedRule, `command:${command}`);
   }
+});
+
+test("configured prefixes approve normal GitHub operations but keep destructive Git commands manual", () => {
+  const policy = { allowedCommands: [], allowedCommandPrefixes: ["git push", "gh issue", "gh pr"], allowedPaths: [] };
+  for (const command of ["git push origin feature/example", "gh issue close 12", "gh pr create --base develop"]) {
+    assert.equal(evaluateAutoApproval(policy, { operation: "command", sessionRoot: "C:\\work", command }).autoApprove, true, command);
+  }
+  for (const command of ["git push --force origin develop", "git push -f origin develop", "git push origin --delete feature/x", "git reset --hard", "git clean -fd", "git branch -D feature/x"]) {
+    const result = evaluateAutoApproval({ ...policy, allowedCommands: [command] }, { operation: "command", sessionRoot: "C:\\work", command });
+    assert.equal(result.autoApprove, false, command);
+    assert.match(result.reason, /手動確認/);
+  }
+});
+
+test("PowerShell wrapped gh commands use the inner prefix policy", () => {
+  const result = evaluateAutoApproval({ allowedCommands: [], allowedCommandPrefixes: ["gh pr"], allowedPaths: [] }, {
+    operation: "command", sessionRoot: "C:\\work", command: 'powershell -Command "gh pr create --base develop"',
+  });
+  assert.equal(result.autoApprove, true);
+  assert.equal(result.matchedCommand, "gh pr create --base develop");
 });
 
 test("PowerShell wrapped git commands use the inner exact-match policy", () => {

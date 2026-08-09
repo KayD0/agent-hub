@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { AuthenticationManager } from "./application/authentication-manager";
 import { SessionManager } from "./application/session-manager";
 import { RepositoryManager } from "./application/repository-manager";
+import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
 import { RepositoryFileReader } from "./infrastructure/filesystem/repository-file-reader";
@@ -31,6 +32,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const readCodexPath = () => vscode.workspace.getConfiguration("agentHub").get<string>("codexPath")?.trim() || undefined;
   const codexPath = readCodexPath();
   const codexArgs = vscode.workspace.getConfiguration("agentHub").get<string[]>("codexArgs", []);
+  const autoApprovalPolicy = readAutoApprovalPolicy();
   await logger.info("Extension activation started", { codexPath: codexPath ?? "PATH:codex" });
   const gateway = new AppServerClient(readCodexPath, (message) => void logger?.info("Codex app-server event", summarizeAppServerLog(message)), codexArgs);
   const authentication = new AuthenticationManager(gateway);
@@ -85,7 +87,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showInformationMessage(`Issue ${issue.repository.slug}#${issue.number} を「${target.title}」へ渡しました。`);
     detailPanel.show(target.id);
   }, showError);
-  manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState));
+  manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
@@ -143,6 +145,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.logout", () => authentication.logout()),
     vscode.commands.registerCommand("agentHub.refresh", () => sessionsView.refresh(true)),
     vscode.commands.registerCommand("agentHub.filterSessionsByRepository", () => sessionsView.selectRepositoryGroups()),
+    vscode.commands.registerCommand("agentHub.enableBulkAuto", () => sessionsView.setAllAutoApprove(true)),
+    vscode.commands.registerCommand("agentHub.disableBulkAuto", () => sessionsView.setAllAutoApprove(false)),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
     vscode.commands.registerCommand("agentHub.addRepository", (candidate?: vscode.Uri) => addRepository(candidate)),
     vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),
@@ -351,6 +355,15 @@ async function notifyForChanges(sessionManager: SessionManager): Promise<void> {
 function showError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   void vscode.window.showErrorMessage(`AgentHub: ${message}`);
+}
+
+function readAutoApprovalPolicy(): AutoApprovalPolicy {
+  const config = vscode.workspace.getConfiguration("agentHub.autoApprove");
+  return {
+    allowedCommands: config.get<string[]>("allowedCommands", []),
+    allowedCommandPrefixes: config.get<string[]>("allowedCommandPrefixes", ["git status", "git diff", "git log", "git branch", "git add", "git commit", "git push", "gh issue", "gh pr"]),
+    allowedPaths: config.get<string[]>("allowedPaths", ["${sessionRoot}"]),
+  };
 }
 
 async function openCodexRules(): Promise<void> {
