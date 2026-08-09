@@ -1,5 +1,7 @@
 export type FolderAnalysisScope = "changes" | "important" | "all";
 export type FolderAnalysisDepth = "quick" | "standard" | "deep";
+export type FolderAnalysisKind = "issues" | "competitive";
+export type CompetitiveAnalysisFocus = "positioning" | "features" | "pricing" | "all";
 export type FolderAnalysisPriority = "high" | "medium" | "low";
 
 export interface FolderAnalysisCandidate {

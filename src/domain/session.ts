@@ -85,11 +85,13 @@ export interface RelatedGitHubIssue {
 
 export interface FolderAnalysisOrigin {
   kind: "folder_analysis";
+  analysisKind?: "issues" | "competitive";
   repositoryGroupId: string;
   repositoryName: string;
   rootPath: string;
   scope?: "changes" | "important" | "all";
   depth?: "quick" | "standard" | "deep";
+  competitiveFocus?: "positioning" | "features" | "pricing" | "all";
 }
 
 export interface ManagedSession {

@@ -359,13 +359,27 @@ test("folder analysis origin updates the title and persists its repository relat
   assert.equal(session.title, "課題分析: agent-hub");
   assert.deepEqual(session.origin, {
     kind: "folder_analysis",
+    analysisKind: "issues",
     repositoryGroupId: "group-1",
     repositoryName: "agent-hub",
     rootPath: "C:\\work\\agent-hub",
     scope: "changes",
     depth: "deep",
+    competitiveFocus: undefined,
   });
   assert.deepEqual(repository.value[0].origin, session.origin);
+});
+
+test("competitive analysis origin preserves its focus and uses a distinct title", async () => {
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(new FakeGateway(), repository);
+  const session = await manager.createSession("C:\\work\\agent-hub", "Analyze competitors");
+
+  await manager.attachFolderAnalysisOrigin(session.id, "group-1", "agent-hub", "C:\\work\\agent-hub", "all", "standard", "competitive", "positioning");
+
+  assert.equal(session.title, "競合分析: agent-hub");
+  assert.equal(session.origin?.analysisKind, "competitive");
+  assert.equal(session.origin?.competitiveFocus, "positioning");
 });
 
 test("sending the first message starts a turn for a ready session", async () => {

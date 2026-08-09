@@ -18,8 +18,8 @@ import { RepositoryWebviewProvider } from "./presentation/repository-webview-pro
 import { GitHubIssueClient } from "./infrastructure/github/github-issue-client";
 import { GitHubIssuesPanel } from "./presentation/github-issues-panel";
 import { FolderAnalysisPanel } from "./presentation/folder-analysis-panel";
-import { folderAnalysisPrompt } from "./application/folder-analysis-prompt";
-import { FolderAnalysisCandidate, FolderAnalysisDepth, FolderAnalysisScope } from "./domain/folder-analysis";
+import { competitiveAnalysisPrompt, folderAnalysisPrompt } from "./application/folder-analysis-prompt";
+import { CompetitiveAnalysisFocus, FolderAnalysisCandidate, FolderAnalysisDepth, FolderAnalysisKind, FolderAnalysisScope } from "./domain/folder-analysis";
 import { collectEnvironmentDiagnostics } from "./infrastructure/system/environment-diagnostics";
 import { redactSensitive } from "./infrastructure/vscode/file-logger";
 
@@ -92,7 +92,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     detailPanel.show(target.id);
   }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
-  const folderAnalysisPanel = new FolderAnalysisPanel(manager, async (group, candidates) => {
+  const folderAnalysisPanel = new FolderAnalysisPanel(manager, async (group, candidates, analysisKind) => {
     await githubIssueClient.assertReady();
     const snapshot = await repositoryManager.groupSnapshot(group);
     const repositories = await Promise.all(snapshot.repositories.map(async (repository) => {
@@ -112,7 +112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     if (answer !== "Issueを作成") return [];
     const urls: string[] = [];
-    for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate)));
+    for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate, analysisKind)));
     return urls;
   }, showError);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
@@ -151,22 +151,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     const group = repositoryManager.get(repositoryId);
     if (!group) throw new Error("登録済みフォルダが見つかりません。");
-    const scope = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisScope }>([
-      { label: "$(git-compare) 変更差分", description: "未コミット差分とdevelopとの差分を中心に確認", value: "changes" },
-      { label: "$(files) 主要ファイル", description: "設定、主要実装、テストを代表的に確認", value: "important" },
-      { label: "$(folder-opened) フォルダ全体", description: "リポジトリ全体を横断的に確認", value: "all" },
-    ], { title: `${group.name}: 課題分析の範囲`, placeHolder: "分析範囲を選択" });
-    if (!scope) return;
+    const kind = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisKind }>([
+      { label: "$(search) 課題と対応方針を分析", description: "コードや設定から課題を特定し、課題ごとの対応方針を提案", value: "issues" },
+      { label: "$(globe) 競合から進むべき方向性を分析", description: "市場・競合との比較から、AgentHubの差別化と進む方向を提案", value: "competitive" },
+    ], { title: `${group.name}: 分析の種類`, placeHolder: "分析方法を選択" });
+    if (!kind) return;
+    let scope: FolderAnalysisScope = "all";
+    let competitiveFocus: CompetitiveAnalysisFocus | undefined;
+    if (kind.value === "issues") {
+      const selectedScope = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisScope }>([
+        { label: "$(git-compare) 変更差分", description: "未コミット差分とdevelopとの差分を中心に確認", value: "changes" },
+        { label: "$(files) 主要ファイル", description: "設定、主要実装、テストを代表的に確認", value: "important" },
+        { label: "$(folder-opened) フォルダ全体", description: "リポジトリ全体を横断的に確認", value: "all" },
+      ], { title: `${group.name}: 課題分析の範囲`, placeHolder: "分析範囲を選択" });
+      if (!selectedScope) return;
+      scope = selectedScope.value;
+    } else {
+      const selectedFocus = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: CompetitiveAnalysisFocus }>([
+        { label: "$(target) ポジショニング", description: "対象ユーザー、価値提案、差別化を比較", value: "positioning" },
+        { label: "$(list-tree) 機能", description: "主要機能、利用フロー、連携を比較", value: "features" },
+        { label: "$(credit-card) 料金・導入コスト", description: "料金体系、無料枠、チーム利用を比較", value: "pricing" },
+        { label: "$(dashboard) 総合", description: "ポジショニング、機能、料金、運用を横断比較", value: "all" },
+      ], { title: `${group.name}: 競合分析の観点`, placeHolder: "比較観点を選択" });
+      if (!selectedFocus) return;
+      competitiveFocus = selectedFocus.value;
+    }
     const depth = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisDepth }>([
       { label: "$(zap) 軽量", description: "明確で影響の大きい候補を最大3件", value: "quick" },
       { label: "$(search) 標準", description: "正確性、テスト、保守性、UX、運用性を最大8件", value: "standard" },
       { label: "$(inspect) 詳細", description: "境界条件、セキュリティ、性能まで最大15件", value: "deep" },
     ], { title: `${group.name}: 課題分析の深度`, placeHolder: "分析深度を選択" });
     if (!depth) return;
-    const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath), folderAnalysisPrompt(scope.value, depth.value));
+    const prompt = kind.value === "competitive"
+      ? competitiveAnalysisPrompt(competitiveFocus ?? "all", depth.value)
+      : folderAnalysisPrompt(scope, depth.value);
+    const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath), prompt);
     if (session) {
-      await manager!.attachFolderAnalysisOrigin(session.id, group.id, group.name, group.rootPath, scope.value, depth.value);
-      folderAnalysisPanel.show(group, session.id, scope.value, depth.value);
+      await manager!.attachFolderAnalysisOrigin(session.id, group.id, group.name, group.rootPath, scope, depth.value, kind.value, competitiveFocus);
+      folderAnalysisPanel.show(group, session.id, scope, depth.value, kind.value, competitiveFocus);
     }
   };
   repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, analyzeGroup, showError);
@@ -455,9 +477,10 @@ function issuePrompt(issue: import("./domain/github-issue").GitHubIssue): string
   return `GitHub Issue ${issue.repository.slug}#${issue.number} に対応してください。\n\nタイトル: ${issue.title}\nURL: ${issue.url}\n\n本文:\n${issueBody || "（本文なし）"}`;
 }
 
-function folderAnalysisIssueBody(candidate: FolderAnalysisCandidate): string {
+function folderAnalysisIssueBody(candidate: FolderAnalysisCandidate, analysisKind: FolderAnalysisKind): string {
   const evidence = candidate.evidence.length ? candidate.evidence.map((item) => `- ${item}`).join("\n") : "- 根拠なし";
-  return `## 概要\n\n${candidate.description}\n\n## 背景・根拠\n\n${evidence}\n\n## 方針\n\n${candidate.direction}\n\n## 制約\n\n- 既存の利用者向け動作とデータを維持する。\n- 実装前に記載した根拠が現在も有効か確認する。\n\n## 非対象\n\n- この課題と直接関係しない機能変更。\n\n## 受け入れ条件\n\n- 記載した課題が再現または確認できる。\n- 方針に沿った変更で課題が解消される。\n- 関連する既存テストと追加テストが成功する。\n\n優先度: ${candidate.priority}`;
+  const heading = analysisKind === "competitive" ? "## AgentHubが進むべき方向性" : "## 課題への対応方針";
+  return `## 概要\n\n${candidate.description}\n\n## 背景・根拠\n\n${evidence}\n\n${heading}\n\n${candidate.direction}\n\n## 制約\n\n- 既存の利用者向け動作とデータを維持する。\n- 実行前に記載した根拠が現在も有効か確認する。\n\n## 非対象\n\n- この提案と直接関係しない変更。\n\n## 受け入れ条件\n\n- 記載した根拠を再確認できる。\n- 提案した方針に沿った成果を評価できる。\n- 必要な検証方法または評価指標が定義される。\n\n優先度: ${candidate.priority}`;
 }
 
 function isInside(candidate: string, root: string): boolean {

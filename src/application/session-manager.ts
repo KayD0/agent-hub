@@ -198,11 +198,14 @@ export class SessionManager {
     rootPath: string,
     scope?: "changes" | "important" | "all",
     depth?: "quick" | "standard" | "deep",
+    analysisKind: "issues" | "competitive" = "issues",
+    competitiveFocus?: "positioning" | "features" | "pricing" | "all",
   ): Promise<void> {
     const session = this.requireSession(sessionId);
-    session.origin = { kind: "folder_analysis", repositoryGroupId, repositoryName, rootPath, scope, depth };
-    session.title = `課題分析: ${repositoryName}`;
-    this.appendActivity(session, "system", `登録フォルダ「${repositoryName}」の課題分析`, rootPath);
+    session.origin = { kind: "folder_analysis", analysisKind, repositoryGroupId, repositoryName, rootPath, scope, depth, competitiveFocus };
+    const label = analysisKind === "competitive" ? "競合分析" : "課題分析";
+    session.title = `${label}: ${repositoryName}`;
+    this.appendActivity(session, "system", `登録フォルダ「${repositoryName}」の${label}`, rootPath);
     session.updatedAt = Date.now();
     this.emitChange(session.id);
     await this.persist();
