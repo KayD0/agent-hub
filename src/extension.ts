@@ -17,6 +17,9 @@ import { RepositoryDiffPanel } from "./presentation/repository-diff-panel";
 import { RepositoryWebviewProvider } from "./presentation/repository-webview-provider";
 import { GitHubIssueClient } from "./infrastructure/github/github-issue-client";
 import { GitHubIssuesPanel } from "./presentation/github-issues-panel";
+import { FolderAnalysisPanel } from "./presentation/folder-analysis-panel";
+import { folderAnalysisPrompt } from "./application/folder-analysis-prompt";
+import { FolderAnalysisDepth, FolderAnalysisScope } from "./domain/folder-analysis";
 import { collectEnvironmentDiagnostics } from "./infrastructure/system/environment-diagnostics";
 import { redactSensitive } from "./infrastructure/vscode/file-logger";
 
@@ -88,6 +91,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     detailPanel.show(target.id);
   }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
+  const folderAnalysisPanel = new FolderAnalysisPanel(manager);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
@@ -116,7 +120,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const terminal = vscode.window.createTerminal({ name: `AgentHub: ${group.name}`, cwd: group.rootPath });
     terminal.show();
   };
-  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, showError);
+  const analyzeGroup = async (repositoryId: string): Promise<void> => {
+    if (!authentication.isAuthenticated()) {
+      const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
+      if (action) await vscode.commands.executeCommand("agentHub.login");
+      return;
+    }
+    const group = repositoryManager.get(repositoryId);
+    if (!group) throw new Error("登録済みフォルダが見つかりません。");
+    const scope = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisScope }>([
+      { label: "$(git-compare) 変更差分", description: "未コミット差分とdevelopとの差分を中心に確認", value: "changes" },
+      { label: "$(files) 主要ファイル", description: "設定、主要実装、テストを代表的に確認", value: "important" },
+      { label: "$(folder-opened) フォルダ全体", description: "リポジトリ全体を横断的に確認", value: "all" },
+    ], { title: `${group.name}: 課題分析の範囲`, placeHolder: "分析範囲を選択" });
+    if (!scope) return;
+    const depth = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisDepth }>([
+      { label: "$(zap) 軽量", description: "明確で影響の大きい候補を最大3件", value: "quick" },
+      { label: "$(search) 標準", description: "正確性、テスト、保守性、UX、運用性を最大8件", value: "standard" },
+      { label: "$(inspect) 詳細", description: "境界条件、セキュリティ、性能まで最大15件", value: "deep" },
+    ], { title: `${group.name}: 課題分析の深度`, placeHolder: "分析深度を選択" });
+    if (!depth) return;
+    const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath), folderAnalysisPrompt(scope.value, depth.value));
+    if (session) {
+      await manager!.attachFolderAnalysisOrigin(session.id, group.id, group.name, group.rootPath);
+      folderAnalysisPanel.show(group, session.id, scope.value, depth.value);
+    }
+  };
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, analyzeGroup, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
@@ -124,6 +154,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     detailPanel,
     repositoryDiffPanel,
     githubIssuesPanel,
+    folderAnalysisPanel,
     repositoryManager,
     { dispose: () => void manager?.dispose() },
   );

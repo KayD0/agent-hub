@@ -349,6 +349,23 @@ test("creating a session without a prompt leaves it ready without starting a tur
   assert.deepEqual(gateway.turns, []);
 });
 
+test("folder analysis origin updates the title and persists its repository relationship", async () => {
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(new FakeGateway(), repository);
+  const session = await manager.createSession("C:\\work\\agent-hub", "Analyze issues");
+
+  await manager.attachFolderAnalysisOrigin(session.id, "group-1", "agent-hub", "C:\\work\\agent-hub");
+
+  assert.equal(session.title, "課題分析: agent-hub");
+  assert.deepEqual(session.origin, {
+    kind: "folder_analysis",
+    repositoryGroupId: "group-1",
+    repositoryName: "agent-hub",
+    rootPath: "C:\\work\\agent-hub",
+  });
+  assert.deepEqual(repository.value[0].origin, session.origin);
+});
+
 test("sending the first message starts a turn for a ready session", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());

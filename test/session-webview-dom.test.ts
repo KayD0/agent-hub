@@ -101,6 +101,22 @@ test("session content is rendered as text and only one popover opens", async (co
   assert.equal(document.querySelectorAll(".is-open").length, 1);
 });
 
+test("folder analysis sessions show their registered folder relationship", async (context) => {
+  const { dom } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("analysis", { origin: {
+    kind: "folder_analysis",
+    repositoryGroupId: "app",
+    repositoryName: "agent-hub",
+    rootPath: "C:\\work\\agent-hub",
+  } })]);
+
+  const origin = dom.window.document.querySelector<HTMLElement>(".session-origin")!;
+  assert.equal(origin.hidden, false);
+  assert.equal(origin.textContent, "課題分析 · agent-hub");
+  assert.equal(origin.title, "C:\\work\\agent-hub");
+});
+
 test("additional input posts the stable session contract", async (context) => {
   const { dom, posted } = await createWebview();
   context.after(() => dom.window.close());

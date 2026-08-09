@@ -127,6 +127,10 @@
     head.append(handle, main, el("span", "status"), el("div", "header-actions"));
     card.append(head);
 
+    const origin = el("div", "session-origin");
+    origin.hidden = true;
+    card.append(origin);
+
     const relatedIssues = el("div", "last-instruction related-issues");
     relatedIssues.hidden = true;
     card.append(relatedIssues);
@@ -204,10 +208,21 @@
     textarea.dataset.session = session.id;
     textarea.setAttribute("aria-label", session.title + "への指示");
     updateHeaderActions(card, session);
+    updateOrigin(card, session);
     updateRelatedIssues(card, session);
     updateInstruction(card, session);
     updateResult(card, session);
     updatePending(card, session);
+  }
+
+  function updateOrigin(card, session) {
+    const node = card.querySelector(".session-origin");
+    const origin = session.origin?.kind === "folder_analysis" ? session.origin : undefined;
+    node.hidden = !origin;
+    node.textContent = origin ? "課題分析 · " + origin.repositoryName : "";
+    node.title = origin?.rootPath || "";
+    if (origin) node.setAttribute("aria-label", "課題分析の対象フォルダ: " + origin.repositoryName + "、" + origin.rootPath);
+    else node.removeAttribute("aria-label");
   }
 
   function updateHeaderActions(card, session) {

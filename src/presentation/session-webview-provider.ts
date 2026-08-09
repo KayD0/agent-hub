@@ -6,7 +6,7 @@ import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
 
-type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "relatedIssues" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
+type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "origin" | "relatedIssues" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
 type RepositoryGroupFilter = { id: string; name: string; rootPath: string };
 
 interface WebviewMessage {
@@ -119,13 +119,14 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
 
   private snapshot(): SessionViewModel[] {
     const groups = this.listRepositoryGroups();
-    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, relatedIssues, autoApprove, pendingInteraction, cwd }) => ({
+    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, origin, relatedIssues, autoApprove, pendingInteraction, cwd }) => ({
       id,
       title,
       status,
       currentActivity: status === "starting" || status === "running" ? "処理中" : currentActivity,
       finalResult,
       lastInstruction,
+      origin,
       relatedIssues,
       autoApprove,
       pendingInteraction,

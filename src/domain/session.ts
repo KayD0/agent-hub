@@ -83,6 +83,13 @@ export interface RelatedGitHubIssue {
   linkedAt: number;
 }
 
+export interface FolderAnalysisOrigin {
+  kind: "folder_analysis";
+  repositoryGroupId: string;
+  repositoryName: string;
+  rootPath: string;
+}
+
 export interface ManagedSession {
   id: string;
   threadId: string;
@@ -93,6 +100,7 @@ export interface ManagedSession {
   currentActivity?: string;
   finalResult?: string;
   lastInstruction?: string;
+  origin?: FolderAnalysisOrigin;
   relatedIssues: RelatedGitHubIssue[];
   autoApprove: boolean;
   approvalAudit: ApprovalAuditEntry[];
@@ -114,6 +122,7 @@ export interface PersistedSession {
   currentActivity?: string;
   finalResult?: string;
   lastInstruction?: string;
+  origin?: FolderAnalysisOrigin;
   relatedIssues?: RelatedGitHubIssue[];
   approvalAudit?: ApprovalAuditEntry[];
   unread: boolean;
