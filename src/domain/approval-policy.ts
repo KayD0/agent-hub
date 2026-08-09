@@ -49,29 +49,39 @@ function evaluateCommand(policy: AutoApprovalPolicy, command: string | undefined
   if (ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(normalized))) {
     return { autoApprove: false, reason: "削除または外部通信を含むため手動確認が必要です" };
   }
-  const wrapped = unwrapPowerShellGitCommand(normalized);
-  if (wrapped.recognized && !wrapped.command) {
-    return { autoApprove: false, reason: "PowerShell内の単一Gitコマンドを安全に確認できないため手動確認が必要です" };
+  const wrapped = unwrapPowerShellCommands(normalized);
+  if (wrapped.recognized && !wrapped.commands) {
+    return { autoApprove: false, reason: "PowerShell内のコマンド列を安全に確認できないため手動確認が必要です" };
   }
-  if (wrapped.command && ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(wrapped.command!))) {
+  if (wrapped.commands?.some((candidate) => ALWAYS_CONFIRM_COMMANDS.some((pattern) => pattern.test(candidate)))) {
     return { autoApprove: false, reason: "削除または外部通信を含むため手動確認が必要です" };
   }
-  const effectiveCommand = wrapped.command ?? normalized;
-  const matched = policy.allowedCommands.find((rule) => rule.trim() === effectiveCommand);
-  const matchedPrefix = policy.allowedCommandPrefixes?.find((rule) => commandHasPrefix(effectiveCommand, rule));
-  return matched || matchedPrefix
-    ? {
-        autoApprove: true,
-        reason: wrapped.command
-          ? `PowerShell内のコマンド「${effectiveCommand}」がAuto承認ルールに一致しました`
-          : matched ? "登録済みコマンドと完全一致しました" : "登録済みコマンド接頭辞に一致しました",
-        matchedRule: matched ? `command:${matched}` : `prefix:${matchedPrefix}`,
-        matchedCommand: wrapped.command,
-      }
-    : { autoApprove: false, reason: "Codex rulesの許可条件と一致しません。承認が必要です" };
+  const effectiveCommands = wrapped.commands ?? [normalized];
+  const matches = effectiveCommands.map((candidate) => matchCommand(policy, candidate));
+  if (matches.some((match) => !match)) {
+    return { autoApprove: false, reason: "Codex rulesの許可条件と一致しません。承認が必要です" };
+  }
+  const matchedRules = matches.map((match) => match!);
+  return {
+    autoApprove: true,
+    reason: wrapped.commands
+      ? effectiveCommands.length === 1
+        ? `PowerShell内のコマンド「${effectiveCommands[0]}」がAuto承認ルールに一致しました`
+        : `PowerShell内の${effectiveCommands.length}件のコマンドがすべてAuto承認ルールに一致しました`
+      : matchedRules[0].startsWith("command:") ? "登録済みコマンドと完全一致しました" : "登録済みコマンド接頭辞に一致しました",
+    matchedRule: matchedRules.length === 1 ? matchedRules[0] : `compound:${matchedRules.join(",")}`,
+    matchedCommand: wrapped.commands?.join("; "),
+  };
 }
 
-function unwrapPowerShellGitCommand(value: string): { recognized: boolean; command?: string } {
+function matchCommand(policy: AutoApprovalPolicy, command: string): string | undefined {
+  const matched = policy.allowedCommands.find((rule) => rule.trim() === command);
+  if (matched) return `command:${matched}`;
+  const matchedPrefix = policy.allowedCommandPrefixes?.find((rule) => commandHasPrefix(command, rule));
+  return matchedPrefix ? `prefix:${matchedPrefix}` : undefined;
+}
+
+function unwrapPowerShellCommands(value: string): { recognized: boolean; commands?: string[] } {
   const executableMatch = value.match(/^(?:"([^"]+)"|'([^']+)'|(\S+))\s+([\s\S]+)$/);
   if (!executableMatch) return { recognized: false };
   const executable = (executableMatch[1] ?? executableMatch[2] ?? executableMatch[3]).replace(/\\/g, "/").split("/").pop()?.toLocaleLowerCase();
@@ -80,9 +90,37 @@ function unwrapPowerShellGitCommand(value: string): { recognized: boolean; comma
   if (!commandMatch || !safePowerShellOptions(commandMatch[1])) return { recognized: true };
   let inner = commandMatch[2].trim();
   if ((inner.startsWith("'") && inner.endsWith("'")) || (inner.startsWith('"') && inner.endsWith('"'))) inner = inner.slice(1, -1).trim();
-  if (!/^(?:git|gh)(?:\.exe)?(?:\s|$)/i.test(inner)) return { recognized: true };
-  if (/[;|&<>`$\r\n]/.test(inner)) return { recognized: true };
-  return { recognized: true, command: inner };
+  if (/[|&<>`$\r\n]/.test(inner)) return { recognized: true };
+  const commands = splitSimplePowerShellCommands(inner);
+  if (!commands || commands.some((candidate) => !/^(?:git|gh)(?:\.exe)?(?:\s|$)/i.test(candidate))) return { recognized: true };
+  return { recognized: true, commands };
+}
+
+function splitSimplePowerShellCommands(value: string): string[] | undefined {
+  const commands: string[] = [];
+  let start = 0;
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote) {
+      if (character === quote) {
+        if (value[index + 1] === quote) index += 1;
+        else quote = undefined;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') { quote = character; continue; }
+    if (character !== ";") continue;
+    const command = value.slice(start, index).trim();
+    if (!command) return undefined;
+    commands.push(command);
+    start = index + 1;
+  }
+  if (quote) return undefined;
+  const finalCommand = value.slice(start).trim();
+  if (!finalCommand) return undefined;
+  commands.push(finalCommand);
+  return commands;
 }
 
 function commandHasPrefix(command: string, rule: string): boolean {

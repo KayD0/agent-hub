@@ -60,6 +60,41 @@ test("PowerShell wrapped gh commands use the inner prefix policy", () => {
   assert.equal(result.matchedCommand, "gh pr create --base develop");
 });
 
+test("PowerShell compound commands are approved only when every command matches", () => {
+  const policy = {
+    allowedCommands: [],
+    allowedCommandPrefixes: ["gh issue view", "git status", "git log"],
+    allowedPaths: [],
+  };
+  const command = '"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command \'gh issue view 32 --repo KayD0/agent-hub --json number,title; git status --short --branch; git log -5 --oneline --decorate\'';
+
+  const result = evaluateAutoApproval(policy, { operation: "command", sessionRoot: "C:\\work", command });
+
+  assert.equal(result.autoApprove, true);
+  assert.equal(result.matchedCommand, "gh issue view 32 --repo KayD0/agent-hub --json number,title; git status --short --branch; git log -5 --oneline --decorate");
+  assert.match(result.reason, /3件/);
+});
+
+test("PowerShell compound commands keep semicolons inside quoted arguments", () => {
+  const inner = 'gh issue view 32 --template "{{printf \'title; body\'}}"; git status --short';
+  const policy = { allowedCommands: [inner.split("; git status")[0], "git status --short"], allowedPaths: [] };
+
+  const result = evaluateAutoApproval(policy, {
+    operation: "command", sessionRoot: "C:\\work", command: `powershell -Command '${inner}'`,
+  });
+
+  assert.equal(result.autoApprove, true);
+});
+
+test("PowerShell compound commands fail closed when one command is unmatched", () => {
+  const result = evaluateAutoApproval({ allowedCommands: [], allowedCommandPrefixes: ["git status"], allowedPaths: [] }, {
+    operation: "command", sessionRoot: "C:\\work", command: 'powershell -Command "git status; gh issue close 32"',
+  });
+
+  assert.equal(result.autoApprove, false);
+  assert.match(result.reason, /一致しません/);
+});
+
 test("PowerShell wrapped git commands use the inner exact-match policy", () => {
   const policy = { allowedCommands: ["git status", "git push origin develop"], allowedPaths: [] };
   for (const command of [
@@ -74,7 +109,7 @@ test("PowerShell wrapped git commands use the inner exact-match policy", () => {
   }
 });
 
-test("PowerShell wrappers fail closed for unmatched or compound commands", () => {
+test("PowerShell wrappers fail closed for unsafe or unparseable commands", () => {
   const policy = { allowedCommands: ["git status", "git push origin develop"], allowedPaths: [] };
   for (const command of [
     'powershell -Command "git status --short"',
