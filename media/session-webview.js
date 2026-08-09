@@ -248,12 +248,12 @@
       checkbox.type = "checkbox";
       checkbox.addEventListener("change", () => vscode.postMessage({ type: "autoApprove", sessionId: card.dataset.sessionId, enabled: checkbox.checked }));
       auto.append(checkbox, document.createTextNode("Auto"));
-      container.append(auto);
       if (["starting", "running", "waiting_for_input"].includes(session.status)) {
         const interrupt = button("中断", "処理を中断", () => vscode.postMessage({ type: "interrupt", sessionId: card.dataset.sessionId }), true);
         interrupt.classList.add("header-action");
         container.append(interrupt);
       }
+      container.append(auto);
       if (["ready", "completed", "failed", "interrupted", "disconnected"].includes(session.status)) {
         const remove = button("×", "一覧から削除", () => vscode.postMessage({ type: "remove", sessionId: card.dataset.sessionId }));
         remove.className = "icon-button";
