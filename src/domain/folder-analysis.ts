@@ -5,6 +5,7 @@ export type FolderAnalysisPriority = "high" | "medium" | "low";
 export interface FolderAnalysisCandidate {
   title: string;
   description: string;
+  direction: string;
   evidence: string[];
   priority: FolderAnalysisPriority;
 }
@@ -33,11 +34,15 @@ function parseCandidate(value: unknown): FolderAnalysisCandidate | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.title !== "string" || typeof candidate.description !== "string") return undefined;
+  if (candidate.direction !== undefined && typeof candidate.direction !== "string") return undefined;
   if (!Array.isArray(candidate.evidence) || candidate.evidence.some((item) => typeof item !== "string")) return undefined;
   if (candidate.priority !== "high" && candidate.priority !== "medium" && candidate.priority !== "low") return undefined;
   return {
     title: candidate.title.trim(),
     description: candidate.description.trim(),
+    direction: typeof candidate.direction === "string" && candidate.direction.trim()
+      ? candidate.direction.trim()
+      : "根拠を再確認し、既存の責務境界を保ちながら課題を解消する。",
     evidence: candidate.evidence.map((item) => String(item).trim()).filter(Boolean),
     priority: candidate.priority,
   };

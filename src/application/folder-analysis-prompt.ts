@@ -29,6 +29,7 @@ export function folderAnalysisPrompt(scope: FolderAnalysisScope, depth: FolderAn
     {
       "title": "課題候補の短いタイトル",
       "description": "利用者への影響と改善する理由",
+      "direction": "採るべき方向性。実装手順ではなく、責務・制約・判断基準を含める",
       "evidence": ["相対パス:行番号 または確認した具体的事実"],
       "priority": "high | medium | low"
     }

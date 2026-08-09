@@ -140,7 +140,10 @@
 
     const quickActions = el("div", "card-quick-actions");
     const inputPopover = createInputPopover(card);
-    quickActions.append(inputPopover);
+    const analysisResult = button("分析結果", "課題分析結果を候補一覧で表示", () => vscode.postMessage({ type: "openAnalysisResult", sessionId: card.dataset.sessionId }), true);
+    analysisResult.className = "analysis-result-toggle";
+    analysisResult.hidden = true;
+    quickActions.append(analysisResult, inputPopover);
     card.append(quickActions, el("div", "pending-slot"));
     return card;
   }
@@ -209,6 +212,7 @@
     textarea.setAttribute("aria-label", session.title + "への指示");
     updateHeaderActions(card, session);
     updateOrigin(card, session);
+    updateAnalysisResult(card, session);
     updateRelatedIssues(card, session);
     updateInstruction(card, session);
     updateResult(card, session);
@@ -223,6 +227,14 @@
     node.title = origin?.rootPath || "";
     if (origin) node.setAttribute("aria-label", "課題分析の対象フォルダ: " + origin.repositoryName + "、" + origin.rootPath);
     else node.removeAttribute("aria-label");
+  }
+
+  function updateAnalysisResult(card, session) {
+    const button = card.querySelector(".analysis-result-toggle");
+    const available = session.origin?.kind === "folder_analysis";
+    button.hidden = !available;
+    button.disabled = !available;
+    if (available) button.setAttribute("aria-label", session.origin.repositoryName + "の課題分析結果を表示");
   }
 
   function updateHeaderActions(card, session) {

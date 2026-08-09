@@ -354,7 +354,7 @@ test("folder analysis origin updates the title and persists its repository relat
   const manager = new SessionManager(new FakeGateway(), repository);
   const session = await manager.createSession("C:\\work\\agent-hub", "Analyze issues");
 
-  await manager.attachFolderAnalysisOrigin(session.id, "group-1", "agent-hub", "C:\\work\\agent-hub");
+  await manager.attachFolderAnalysisOrigin(session.id, "group-1", "agent-hub", "C:\\work\\agent-hub", "changes", "deep");
 
   assert.equal(session.title, "課題分析: agent-hub");
   assert.deepEqual(session.origin, {
@@ -362,6 +362,8 @@ test("folder analysis origin updates the title and persists its repository relat
     repositoryGroupId: "group-1",
     repositoryName: "agent-hub",
     rootPath: "C:\\work\\agent-hub",
+    scope: "changes",
+    depth: "deep",
   });
   assert.deepEqual(repository.value[0].origin, session.origin);
 });

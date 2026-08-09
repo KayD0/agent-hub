@@ -19,7 +19,7 @@ import { GitHubIssueClient } from "./infrastructure/github/github-issue-client";
 import { GitHubIssuesPanel } from "./presentation/github-issues-panel";
 import { FolderAnalysisPanel } from "./presentation/folder-analysis-panel";
 import { folderAnalysisPrompt } from "./application/folder-analysis-prompt";
-import { FolderAnalysisDepth, FolderAnalysisScope } from "./domain/folder-analysis";
+import { FolderAnalysisCandidate, FolderAnalysisDepth, FolderAnalysisScope } from "./domain/folder-analysis";
 import { collectEnvironmentDiagnostics } from "./infrastructure/system/environment-diagnostics";
 import { redactSensitive } from "./infrastructure/vscode/file-logger";
 
@@ -42,7 +42,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const gitReader = new GitRepositoryReader();
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, new RepositoryFileReader(), showError);
-  const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, new GitHubIssueClient(), async (issue, groupId) => {
+  const githubIssueClient = new GitHubIssueClient();
+  const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, githubIssueClient, async (issue, groupId) => {
     if (!authentication.isAuthenticated()) {
       const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
       if (action) await vscode.commands.executeCommand("agentHub.login");
@@ -91,9 +92,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     detailPanel.show(target.id);
   }, showError);
   manager = new SessionManager(gateway, new VsCodeSessionRepository(context.globalState), undefined, autoApprovalPolicy);
-  const folderAnalysisPanel = new FolderAnalysisPanel(manager);
+  const folderAnalysisPanel = new FolderAnalysisPanel(manager, async (group, candidates) => {
+    await githubIssueClient.assertReady();
+    const snapshot = await repositoryManager.groupSnapshot(group);
+    const repositories = await Promise.all(snapshot.repositories.map(async (repository) => {
+      try { return await githubIssueClient.repository(repository.rootPath); } catch { return undefined; }
+    }));
+    const available = repositories.filter((repository) => repository !== undefined);
+    if (!available.length) throw new Error("Issueを作成できるGitHubリポジトリがフォルダ内にありません。");
+    const repository = available.length === 1 ? available[0] : await vscode.window.showQuickPick(
+      available.map((item) => ({ label: item.slug, description: item.rootPath, repository: item })),
+      { title: "Issueの作成先リポジトリ", placeHolder: "GitHubリポジトリを選択" },
+    ).then((item) => item?.repository);
+    if (!repository) return [];
+    const answer = await vscode.window.showWarningMessage(
+      `${repository.slug} に${candidates.length}件のIssueを作成します。`,
+      { modal: true },
+      "Issueを作成",
+    );
+    if (answer !== "Issueを作成") return [];
+    const urls: string[] = [];
+    for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate)));
+    return urls;
+  }, showError);
   const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
-  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
+  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), (sessionId) => folderAnalysisPanel.showSession(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
     const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "フォルダを登録" });
@@ -142,7 +165,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!depth) return;
     const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath), folderAnalysisPrompt(scope.value, depth.value));
     if (session) {
-      await manager!.attachFolderAnalysisOrigin(session.id, group.id, group.name, group.rootPath);
+      await manager!.attachFolderAnalysisOrigin(session.id, group.id, group.name, group.rootPath, scope.value, depth.value);
       folderAnalysisPanel.show(group, session.id, scope.value, depth.value);
     }
   };
@@ -430,6 +453,11 @@ function samePath(left: string, right: string): boolean {
 function issuePrompt(issue: import("./domain/github-issue").GitHubIssue): string {
   const issueBody = issue.body.length > 20_000 ? `${issue.body.slice(0, 20_000)}\n\n（本文は20,000文字で省略されました）` : issue.body;
   return `GitHub Issue ${issue.repository.slug}#${issue.number} に対応してください。\n\nタイトル: ${issue.title}\nURL: ${issue.url}\n\n本文:\n${issueBody || "（本文なし）"}`;
+}
+
+function folderAnalysisIssueBody(candidate: FolderAnalysisCandidate): string {
+  const evidence = candidate.evidence.length ? candidate.evidence.map((item) => `- ${item}`).join("\n") : "- 根拠なし";
+  return `## 概要\n\n${candidate.description}\n\n## 背景・根拠\n\n${evidence}\n\n## 方針\n\n${candidate.direction}\n\n## 制約\n\n- 既存の利用者向け動作とデータを維持する。\n- 実装前に記載した根拠が現在も有効か確認する。\n\n## 非対象\n\n- この課題と直接関係しない機能変更。\n\n## 受け入れ条件\n\n- 記載した課題が再現または確認できる。\n- 方針に沿った変更で課題が解消される。\n- 関連する既存テストと追加テストが成功する。\n\n優先度: ${candidate.priority}`;
 }
 
 function isInside(candidate: string, root: string): boolean {

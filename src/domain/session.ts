@@ -88,6 +88,8 @@ export interface FolderAnalysisOrigin {
   repositoryGroupId: string;
   repositoryName: string;
   rootPath: string;
+  scope?: "changes" | "important" | "all";
+  depth?: "quick" | "standard" | "deep";
 }
 
 export interface ManagedSession {

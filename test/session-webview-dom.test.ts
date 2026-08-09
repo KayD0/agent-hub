@@ -101,8 +101,8 @@ test("session content is rendered as text and only one popover opens", async (co
   assert.equal(document.querySelectorAll(".is-open").length, 1);
 });
 
-test("folder analysis sessions show their registered folder relationship", async (context) => {
-  const { dom } = await createWebview();
+test("folder analysis sessions show their folder and can reopen the analysis result", async (context) => {
+  const { dom, posted } = await createWebview();
   context.after(() => dom.window.close());
   update(dom, [session("analysis", { origin: {
     kind: "folder_analysis",
@@ -115,6 +115,17 @@ test("folder analysis sessions show their registered folder relationship", async
   assert.equal(origin.hidden, false);
   assert.equal(origin.textContent, "課題分析 · agent-hub");
   assert.equal(origin.title, "C:\\work\\agent-hub");
+  const reopen = dom.window.document.querySelector<HTMLButtonElement>(".analysis-result-toggle")!;
+  assert.equal(reopen.hidden, false);
+  reopen.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "openAnalysisResult", sessionId: "analysis" }));
+});
+
+test("normal sessions do not show the analysis result action", async (context) => {
+  const { dom } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("normal")]);
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>(".analysis-result-toggle")?.hidden, true);
 });
 
 test("additional input posts the stable session contract", async (context) => {
