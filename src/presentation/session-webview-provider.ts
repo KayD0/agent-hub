@@ -6,7 +6,7 @@ import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
 
-type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "relatedIssues" | "pendingInteraction"> & { repositoryGroupIds: string[] };
+type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "relatedIssues" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
 type RepositoryGroupFilter = { id: string; name: string; rootPath: string };
 
 interface WebviewMessage {
@@ -98,6 +98,11 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     this.authSubscription.dispose();
   }
 
+  public setAllAutoApprove(enabled: boolean): void {
+    this.manager.setAllAutoApprove(enabled);
+    this.updateTitleContexts(this.listRepositoryGroups().length > 0);
+  }
+
   private updateAuthenticationChrome(): void {
     const state = this.authentication.getState();
     if (this.view) this.view.description = authenticationDescription(state);
@@ -105,13 +110,16 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
   }
 
   private updateTitleContexts(hasRepositoryGroups: boolean): void {
+    const sessions = this.manager.list();
+    const allAutoEnabled = sessions.length > 0 && sessions.every((session) => session.autoApprove);
     void vscode.commands.executeCommand("setContext", "agentHub.hasRepositoryGroups", hasRepositoryGroups);
     void vscode.commands.executeCommand("setContext", "agentHub.repositoryFilterActive", this.selectedRepositoryGroupIds.size > 0);
+    void vscode.commands.executeCommand("setContext", "agentHub.bulkAutoEnabled", allAutoEnabled);
   }
 
   private snapshot(): SessionViewModel[] {
     const groups = this.listRepositoryGroups();
-    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, relatedIssues, pendingInteraction, cwd }) => ({
+    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, relatedIssues, autoApprove, pendingInteraction, cwd }) => ({
       id,
       title,
       status,
@@ -119,6 +127,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
       finalResult,
       lastInstruction,
       relatedIssues,
+      autoApprove,
       pendingInteraction,
       repositoryGroupIds: groups.filter((group) => isInside(cwd, group.rootPath)).map((group) => group.id),
     }));
@@ -134,6 +143,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     if (!sessionId) return;
     try {
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());
+      else if (message.type === "autoApprove" && typeof message.enabled === "boolean") this.manager.setAutoApprove(sessionId, message.enabled);
       else if (message.type === "open") { this.manager.markRead(sessionId); this.openSession(sessionId); }
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);
       else if (message.type === "remove") await this.manager.remove(sessionId);

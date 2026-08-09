@@ -112,6 +112,19 @@ test("additional input posts the stable session contract", async (context) => {
   assert.equal(textarea.value, "");
 });
 
+test("session Auto toggle posts the stable approval contract", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one")]);
+  const checkbox = dom.window.document.querySelector<HTMLInputElement>(".auto-control input")!;
+  assert.equal(checkbox.checked, false);
+  checkbox.checked = true;
+  checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "autoApprove", sessionId: "one", enabled: true }));
+  update(dom, [session("one", { autoApprove: true })]);
+  assert.equal(dom.window.document.querySelector<HTMLInputElement>(".auto-control input")?.checked, true);
+});
+
 test("session details open from the card without a dedicated button", async (context) => {
   const { dom, posted } = await createWebview();
   context.after(() => dom.window.close());

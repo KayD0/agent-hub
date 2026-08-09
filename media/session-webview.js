@@ -215,6 +215,13 @@
     if (container.dataset.signature !== session.status) {
       container.dataset.signature = session.status;
       container.replaceChildren();
+      const auto = el("label", "auto-control");
+      auto.title = "安全ポリシーに一致する要求だけを自動承認（再起動時にOFF）";
+      const checkbox = el("input");
+      checkbox.type = "checkbox";
+      checkbox.addEventListener("change", () => vscode.postMessage({ type: "autoApprove", sessionId: card.dataset.sessionId, enabled: checkbox.checked }));
+      auto.append(checkbox, document.createTextNode("Auto"));
+      container.append(auto);
       if (["starting", "running", "waiting_for_input"].includes(session.status)) {
         const interrupt = button("中断", "処理を中断", () => vscode.postMessage({ type: "interrupt", sessionId: card.dataset.sessionId }), true);
         interrupt.classList.add("header-action");
@@ -226,6 +233,9 @@
         container.append(remove);
       }
     }
+    const checkbox = container.querySelector(".auto-control input");
+    checkbox.checked = session.autoApprove;
+    checkbox.setAttribute("aria-label", session.title + "の安全なAuto承認");
   }
 
   function updateInstruction(card, session) {

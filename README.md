@@ -58,9 +58,10 @@ Codexとの通信には`codex app-server`のstdio JSONLプロトコルを使用�
 セッション単位でAutoを有効にできますが、すべての要求を無条件に承認する機能ではありません。
 
 - 設定したコマンドと完全一致する操作だけを自動承認
+- 設定したコマンド接頭辞に一致する通常のGit・GitHub操作を自動承認
 - PowerShellの`-Command`でラップされた単一Gitコマンドは、内側のコマンドを完全一致で判定
 - セッションの作業フォルダ内かつ許可パス配下のファイル変更だけを自動承認
-- 再帰削除と直接的な外部通信は常に手動確認
+- 再帰削除、直接的な外部通信、force push、branch削除、`reset --hard`、`clean`は常に手動確認
 - 対象や内容を判定できない要求は手動確認
 - Auto設定はVS Code再起動後に無効化
 
@@ -130,7 +131,8 @@ Extension Host smokeの結果は`artifacts/`配下へ保存されます。
 | `agentHub.notifyOnComplete` | `true` | Turn完了を通知 |
 | `agentHub.notifyOnFailure` | `true` | 失敗・切断を通知 |
 | `agentHub.autoApprove.allowedCommands` | `[]` | Auto承認できるコマンドの完全一致リスト |
-| `agentHub.autoApprove.allowedPaths` | `[]` | Auto承認できるファイル変更パス。`${sessionRoot}`を利用可能 |
+| `agentHub.autoApprove.allowedCommandPrefixes` | Git・GitHubの安全な既定値 | Auto承認できるコマンド接頭辞 |
+| `agentHub.autoApprove.allowedPaths` | `["${sessionRoot}"]` | Auto承認できるファイル変更パス。`${sessionRoot}`を利用可能 |
 
 ## 現在の制約
 
