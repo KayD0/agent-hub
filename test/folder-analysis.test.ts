@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { folderAnalysisPrompt } from "../src/application/folder-analysis-prompt";
+import { competitiveAnalysisPrompt, folderAnalysisPrompt } from "../src/application/folder-analysis-prompt";
 import { parseFolderAnalysisResult } from "../src/domain/folder-analysis";
 
 test("folder analysis prompt explicitly keeps the run read-only", () => {
@@ -8,6 +8,14 @@ test("folder analysis prompt explicitly keeps the run read-only", () => {
   assert.match(prompt, /読み取り専用/);
   assert.match(prompt, /ファイルの作成・編集・削除/);
   assert.match(prompt, /最大8件/);
+});
+
+test("competitive analysis prompt requires current primary sources and a response direction", () => {
+  const prompt = competitiveAnalysisPrompt("positioning", "standard");
+  assert.match(prompt, /必ずWebで最新情報/);
+  assert.match(prompt, /公式サイトや公式ドキュメント/);
+  assert.match(prompt, /直接競合、間接競合、代替手段/);
+  assert.match(prompt, /採るべきポジショニングまたはプロダクト方針/);
 });
 
 test("folder analysis result parses a fenced JSON response", () => {

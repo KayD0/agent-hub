@@ -18,8 +18,8 @@ import { RepositoryWebviewProvider } from "./presentation/repository-webview-pro
 import { GitHubIssueClient } from "./infrastructure/github/github-issue-client";
 import { GitHubIssuesPanel } from "./presentation/github-issues-panel";
 import { FolderAnalysisPanel } from "./presentation/folder-analysis-panel";
-import { folderAnalysisPrompt } from "./application/folder-analysis-prompt";
-import { FolderAnalysisCandidate, FolderAnalysisDepth, FolderAnalysisScope } from "./domain/folder-analysis";
+import { competitiveAnalysisPrompt, folderAnalysisPrompt } from "./application/folder-analysis-prompt";
+import { CompetitiveAnalysisFocus, FolderAnalysisCandidate, FolderAnalysisDepth, FolderAnalysisKind, FolderAnalysisScope } from "./domain/folder-analysis";
 import { collectEnvironmentDiagnostics } from "./infrastructure/system/environment-diagnostics";
 import { redactSensitive } from "./infrastructure/vscode/file-logger";
 
@@ -151,22 +151,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     const group = repositoryManager.get(repositoryId);
     if (!group) throw new Error("登録済みフォルダが見つかりません。");
-    const scope = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisScope }>([
-      { label: "$(git-compare) 変更差分", description: "未コミット差分とdevelopとの差分を中心に確認", value: "changes" },
-      { label: "$(files) 主要ファイル", description: "設定、主要実装、テストを代表的に確認", value: "important" },
-      { label: "$(folder-opened) フォルダ全体", description: "リポジトリ全体を横断的に確認", value: "all" },
-    ], { title: `${group.name}: 課題分析の範囲`, placeHolder: "分析範囲を選択" });
-    if (!scope) return;
+    const kind = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisKind }>([
+      { label: "$(search) 課題と改善方向を分析", description: "コードや設定から課題を特定し、進むべき方向性を提案", value: "issues" },
+      { label: "$(globe) 競合と対応方針を分析", description: "最新の市場情報と比較し、差別化・対応方針を提案", value: "competitive" },
+    ], { title: `${group.name}: 分析の種類`, placeHolder: "分析方法を選択" });
+    if (!kind) return;
+    let scope: FolderAnalysisScope = "all";
+    let competitiveFocus: CompetitiveAnalysisFocus | undefined;
+    if (kind.value === "issues") {
+      const selectedScope = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisScope }>([
+        { label: "$(git-compare) 変更差分", description: "未コミット差分とdevelopとの差分を中心に確認", value: "changes" },
+        { label: "$(files) 主要ファイル", description: "設定、主要実装、テストを代表的に確認", value: "important" },
+        { label: "$(folder-opened) フォルダ全体", description: "リポジトリ全体を横断的に確認", value: "all" },
+      ], { title: `${group.name}: 課題分析の範囲`, placeHolder: "分析範囲を選択" });
+      if (!selectedScope) return;
+      scope = selectedScope.value;
+    } else {
+      const selectedFocus = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: CompetitiveAnalysisFocus }>([
+        { label: "$(target) ポジショニング", description: "対象ユーザー、価値提案、差別化を比較", value: "positioning" },
+        { label: "$(list-tree) 機能", description: "主要機能、利用フロー、連携を比較", value: "features" },
+        { label: "$(credit-card) 料金・導入コスト", description: "料金体系、無料枠、チーム利用を比較", value: "pricing" },
+        { label: "$(dashboard) 総合", description: "ポジショニング、機能、料金、運用を横断比較", value: "all" },
+      ], { title: `${group.name}: 競合分析の観点`, placeHolder: "比較観点を選択" });
+      if (!selectedFocus) return;
+      competitiveFocus = selectedFocus.value;
+    }
     const depth = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: FolderAnalysisDepth }>([
       { label: "$(zap) 軽量", description: "明確で影響の大きい候補を最大3件", value: "quick" },
       { label: "$(search) 標準", description: "正確性、テスト、保守性、UX、運用性を最大8件", value: "standard" },
       { label: "$(inspect) 詳細", description: "境界条件、セキュリティ、性能まで最大15件", value: "deep" },
     ], { title: `${group.name}: 課題分析の深度`, placeHolder: "分析深度を選択" });
     if (!depth) return;
-    const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath), folderAnalysisPrompt(scope.value, depth.value));
+    const prompt = kind.value === "competitive"
+      ? competitiveAnalysisPrompt(competitiveFocus ?? "all", depth.value)
+      : folderAnalysisPrompt(scope, depth.value);
+    const session = await startSession(context, manager!, vscode.Uri.file(group.rootPath), prompt);
     if (session) {
-      await manager!.attachFolderAnalysisOrigin(session.id, group.id, group.name, group.rootPath, scope.value, depth.value);
-      folderAnalysisPanel.show(group, session.id, scope.value, depth.value);
+      await manager!.attachFolderAnalysisOrigin(session.id, group.id, group.name, group.rootPath, scope, depth.value, kind.value, competitiveFocus);
+      folderAnalysisPanel.show(group, session.id, scope, depth.value, kind.value, competitiveFocus);
     }
   };
   repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, analyzeGroup, showError);
