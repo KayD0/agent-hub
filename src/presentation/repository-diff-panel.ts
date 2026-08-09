@@ -81,7 +81,10 @@ export class RepositoryDiffPanel implements vscode.Disposable {
         }
       } else if (message.type === "openFile" && typeof message.path === "string") {
         const repository = this.manager.get(repositoryId);
-        if (repository) await vscode.window.showTextDocument(vscode.Uri.file(await this.files.resolveFile(repository.rootPath, message.path)));
+        if (repository) {
+          const uri = vscode.Uri.file(await this.files.resolveFile(repository.rootPath, message.path));
+          await vscode.commands.executeCommand("vscode.open", uri);
+        }
       }
     } catch (error) { this.onError(error); }
   }
