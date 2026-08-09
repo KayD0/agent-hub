@@ -20,6 +20,11 @@ const MAX_ACTIVITIES = 500;
 const MAX_APPROVAL_AUDIT_ENTRIES = 200;
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000];
 
+export interface SessionChange {
+  sessionId?: string;
+  kind: "state" | "delta" | "collection";
+}
+
 export class SessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly events = new EventEmitter();
@@ -85,7 +90,7 @@ export class SessionManager {
     await this.initialize();
   }
 
-  public onDidChange(listener: () => void): { dispose(): void } {
+  public onDidChange(listener: (change: SessionChange) => void): { dispose(): void } {
     this.events.on("change", listener);
     return { dispose: () => this.events.off("change", listener) };
   }
@@ -136,7 +141,7 @@ export class SessionManager {
     };
     this.sessions.set(session.id, session);
     this.appendActivity(session, "system", "セッションを開始", cwd);
-    this.emitChange();
+    this.emitChange(session.id);
     await this.persist();
     if (!prompt) return session;
     try {
@@ -218,7 +223,7 @@ export class SessionManager {
         return;
       }
     }
-    this.emitChange();
+    this.emitChange(session.id);
   }
 
   public async attachGitHubIssue(sessionId: string, issue: Omit<RelatedGitHubIssue, "linkedAt">, instruction: string): Promise<void> {
@@ -229,7 +234,7 @@ export class SessionManager {
     if (existing >= 0) session.relatedIssues[existing] = linked;
     else session.relatedIssues.push(linked);
     this.appendActivity(session, "system", `GitHub Issue ${issue.repository}#${issue.number} を関連付け`, issue.url);
-    this.emitChange();
+    this.emitChange(session.id);
     await this.persist();
   }
 
@@ -266,7 +271,7 @@ export class SessionManager {
 
   public async remove(sessionId: string): Promise<void> {
     this.sessions.delete(sessionId);
-    this.emitChange();
+    this.emitChange(sessionId, "collection");
     await this.persist();
   }
 
@@ -274,7 +279,7 @@ export class SessionManager {
     const session = this.sessions.get(sessionId);
     if (!session || !session.unread) return;
     session.unread = false;
-    this.emitChange();
+    this.emitChange(session.id);
     void this.persist();
   }
 
@@ -409,7 +414,7 @@ export class SessionManager {
         const delta = optionalString(event.params.delta);
         if (delta) session.currentActivity = compact(delta, 120);
         session.updatedAt = Date.now();
-        this.emitChange();
+        this.emitChange(session.id, "delta");
         break;
       }
       case "turn/completed": {
@@ -459,7 +464,7 @@ export class SessionManager {
       session.currentActivity = completed ? `${type}が完了しました` : `${type}を実行中です`;
     }
     session.updatedAt = Date.now();
-    this.emitChange();
+    this.emitChange(session.id);
   }
 
   private handleExit(reason: string): void {
@@ -497,7 +502,7 @@ export class SessionManager {
     session.attention = attentionForStatus(status);
     session.currentActivity = compact(activity, 160);
     session.updatedAt = Date.now();
-    this.emitChange();
+    this.emitChange(session.id);
     void this.persist();
   }
 
@@ -555,8 +560,8 @@ export class SessionManager {
     };
   }
 
-  private emitChange(): void {
-    this.events.emit("change");
+  private emitChange(sessionId?: string, kind: SessionChange["kind"] = sessionId ? "state" : "collection"): void {
+    this.events.emit("change", { sessionId, kind } satisfies SessionChange);
   }
 
   private async persist(): Promise<void> {
