@@ -66,16 +66,20 @@ export class GitRepositoryReader {
   }
 
   public async readBranches(rootPath: string): Promise<string[]> {
-    const output = await this.git(rootPath, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"]);
-    return output.split(/\r?\n/).map((value) => value.trim()).filter((value) => value && !value.endsWith("/HEAD"));
+    const output = await this.git(rootPath, ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"]);
+    return output.split(/\r?\n/).map((value) => value.trim()).filter((value) => value && !value.endsWith("/HEAD")).map((value) =>
+      value.startsWith("refs/heads/") ? value.slice("refs/heads/".length) : value.slice("refs/remotes/".length),
+    );
   }
 
   public async readDefaultBranch(rootPath: string, candidates: string[]): Promise<string | undefined> {
+    const develop = ["develop", "origin/develop"].find((value) => candidates.includes(value));
+    if (develop) return develop;
     try {
       const remoteHead = (await this.git(rootPath, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])).trim();
       if (remoteHead && candidates.includes(remoteHead)) return remoteHead;
     } catch { /* A repository without origin/HEAD uses the conventional fallback below. */ }
-    return ["develop", "main", "master", "origin/develop", "origin/main", "origin/master"].find((value) => candidates.includes(value));
+    return ["main", "master", "origin/main", "origin/master"].find((value) => candidates.includes(value));
   }
 
   public async isMergedInto(rootPath: string, branch: string | undefined, baseBranch: string | undefined): Promise<boolean | undefined> {

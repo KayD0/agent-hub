@@ -72,10 +72,13 @@ test("lists selectable branches and detects whether the current branch is merged
     await fs.writeFile(path.join(root, "feature.txt"), "feature\n");
     await execFileAsync("git", ["add", "feature.txt"], { cwd: root });
     await execFileAsync("git", ["commit", "-m", "feature"], { cwd: root });
+    await execFileAsync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: root });
+    await execFileAsync("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], { cwd: root });
     const reader = new GitRepositoryReader();
 
-    assert.deepEqual(await reader.readBranches(root), ["develop", "feature/test"]);
+    assert.deepEqual(await reader.readBranches(root), ["develop", "feature/test", "origin/main"]);
     assert.equal(await reader.readDefaultBranch(root, await reader.readBranches(root)), "develop");
+    assert.equal(await reader.readDefaultBranch(root, ["origin/main"]), "origin/main");
     assert.equal(await reader.isMergedInto(root, "feature/test", "develop"), false);
     await execFileAsync("git", ["switch", "develop"], { cwd: root });
     await execFileAsync("git", ["merge", "--ff-only", "feature/test"], { cwd: root });
