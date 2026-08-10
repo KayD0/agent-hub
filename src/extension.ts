@@ -70,7 +70,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         worktree: worktree.rootPath,
       });
       void vscode.window.showInformationMessage(`Issue ${issue.repository.slug}#${issue.number}を${worktree.reused ? "既存" : "新規"}worktreeで開始しました。`);
-      detailPanel.show(session.id);
     };
     if (targetMode === "new") {
       await startInWorktree();
