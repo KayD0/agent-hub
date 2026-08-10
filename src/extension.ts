@@ -8,6 +8,7 @@ import { RepositoryManager } from "./application/repository-manager";
 import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
+import { IssueWorktreeManager } from "./infrastructure/git/issue-worktree-manager";
 import { RepositoryFileReader } from "./infrastructure/filesystem/repository-file-reader";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
@@ -43,6 +44,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, new RepositoryFileReader(), showError);
   const githubIssueClient = new GitHubIssueClient();
+  const issueWorktrees = new IssueWorktreeManager();
   const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, githubIssueClient, async (issue, groupId, targetMode) => {
     if (!authentication.isAuthenticated()) {
       const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
@@ -52,24 +54,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const group = repositoryManager.get(groupId);
     if (!group) throw new Error("登録済みフォルダが見つかりません。");
     const prompt = issuePrompt(issue);
-    const linkedIssue = {
-      repository: issue.repository.slug,
-      number: issue.number,
-      title: issue.title,
-      url: issue.url,
-      worktree: issue.repository.rootPath,
+    const startInWorktree = async (): Promise<void> => {
+      const worktree = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Issue #${issue.number}のworktreeを準備しています` },
+        () => issueWorktrees.prepare(group.rootPath, issue.repository.rootPath, issue.number, issue.title),
+      );
+      const session = await startSession(context, manager!, vscode.Uri.file(worktree.rootPath), prompt);
+      if (!session) return;
+      await manager!.linkGitHubIssue(session.id, {
+        repository: issue.repository.slug,
+        number: issue.number,
+        title: issue.title,
+        url: issue.url,
+        branch: worktree.branch,
+        worktree: worktree.rootPath,
+      });
+      void vscode.window.showInformationMessage(`Issue ${issue.repository.slug}#${issue.number}を${worktree.reused ? "既存" : "新規"}worktreeで開始しました。`);
+      detailPanel.show(session.id);
     };
     if (targetMode === "new") {
-      const session = await startSession(context, manager!, vscode.Uri.file(issue.repository.rootPath), prompt);
-      if (session) {
-        await manager!.linkGitHubIssue(session.id, linkedIssue);
-        detailPanel.show(session.id);
-      }
+      await startInWorktree();
       return;
     }
-    const sessions = manager!.list().filter((session) => isInside(session.cwd, group.rootPath));
+    const sessions = manager!.list().filter((session) => session.relatedIssues.some((related) =>
+      related.repository === issue.repository.slug
+      && related.number === issue.number
+      && typeof related.branch === "string"
+      && typeof related.worktree === "string"
+      && samePath(session.cwd, related.worktree),
+    ));
     if (!sessions.length) {
-      void vscode.window.showInformationMessage("Issueを渡せる既存セッションがありません。新規セッションを選択してください。");
+      const action = await vscode.window.showInformationMessage(
+        "同じIssueのworktreeを使用する既存セッションがありません。",
+        "新規worktreeセッションを作成",
+      );
+      if (action) await startInWorktree();
       return;
     }
     const choices: Array<vscode.QuickPickItem & { sessionId: string }> = sessions.map((session) => ({
@@ -84,20 +103,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!selected) return;
     const target = manager!.get(selected.sessionId);
     if (!target) throw new Error("選択したセッションが見つかりません。");
-    if (!samePath(target.cwd, issue.repository.rootPath)) {
-      const answer = await vscode.window.showWarningMessage(
-        `Issueのリポジトリとセッションの作業フォルダが異なります。\nIssue: ${issue.repository.rootPath}\nSession: ${target.cwd}`,
-        { modal: true },
-        "このセッションへ渡す",
-      );
-      if (answer !== "このセッションへ渡す") return;
-    }
+    const related = target.relatedIssues.find((candidate) => candidate.repository === issue.repository.slug && candidate.number === issue.number && candidate.worktree && samePath(candidate.worktree, target.cwd));
+    if (!related?.branch || !related.worktree) throw new Error("Issue専用worktreeとの関連を確認できません。");
     await manager!.attachGitHubIssue(selected.sessionId, {
       repository: issue.repository.slug,
       number: issue.number,
       title: issue.title,
       url: issue.url,
-      worktree: target.cwd,
+      branch: related.branch,
+      worktree: related.worktree,
     }, prompt);
     void vscode.window.showInformationMessage(`Issue ${issue.repository.slug}#${issue.number} を「${target.title}」へ渡しました。`);
     detailPanel.show(target.id);

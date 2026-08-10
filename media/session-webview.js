@@ -307,10 +307,10 @@
   function updateRelatedIssues(card, session) {
     const node = card.querySelector(".related-issues");
     const issues = session.relatedIssues || [];
-    const text = issues.map((issue) => issue.repository + "#" + issue.number).join(", ");
+    const text = issues.map((issue) => issue.repository + "#" + issue.number + (issue.branch ? " · " + issue.branch : "")).join(", ");
     node.hidden = !issues.length;
     node.textContent = issues.length ? "関連Issue: " + text : "";
-    node.title = issues.map((issue) => issue.title + " · " + issue.url).join("\n");
+    node.title = issues.map((issue) => [issue.title, issue.branch, issue.worktree, issue.url].filter(Boolean).join(" · ")).join("\n");
     if (issues.length) node.setAttribute("aria-label", "関連Issue: " + text);
     else node.removeAttribute("aria-label");
   }

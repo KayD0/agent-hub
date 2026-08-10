@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { GitRepositoryReader, parseCommitFiles, parseGitHistory, parseNumstat, parsePorcelainStatus } from "../src/infrastructure/git/git-repository-reader";
+import { IssueWorktreeManager } from "../src/infrastructure/git/issue-worktree-manager";
+
+const execFileAsync = promisify(execFile);
 
 test("parses modified, added, deleted, and untracked porcelain records", () => {
   assert.deepEqual(parsePorcelainStatus(" M src/a.ts\0A  src/new.ts\0 D docs/old.md\0?? notes.txt\0"), [
@@ -65,5 +70,49 @@ test("renders an untracked file as an inline unified diff", async () => {
     assert.match(diff, /\+first\n\+second/);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("creates and safely reuses an issue worktree from develop", async () => {
+  const groupRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-issue-worktree-"));
+  const repositoryRoot = path.join(groupRoot, "app");
+  try {
+    await fs.mkdir(repositoryRoot);
+    await execFileAsync("git", ["init", "-b", "develop"], { cwd: repositoryRoot });
+    await execFileAsync("git", ["config", "user.email", "agenthub@example.test"], { cwd: repositoryRoot });
+    await execFileAsync("git", ["config", "user.name", "AgentHub Test"], { cwd: repositoryRoot });
+    await fs.writeFile(path.join(repositoryRoot, "README.md"), "initial\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: repositoryRoot });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: repositoryRoot });
+    const manager = new IssueWorktreeManager();
+
+    const created = await manager.prepare(groupRoot, repositoryRoot, 34, "Issue起点の開発をworktreeで分離する");
+    const reused = await manager.prepare(groupRoot, repositoryRoot, 34, "変更後のIssueタイトル");
+
+    assert.equal(created.rootPath, path.join(groupRoot, ".worktrees", "app-issue-34"));
+    assert.equal(created.branch, "issue/34-issue起点の開発をworktreeで分離する");
+    assert.equal(created.reused, false);
+    assert.deepEqual(reused, { ...created, reused: true });
+    const { stdout } = await execFileAsync("git", ["branch", "--show-current"], { cwd: created.rootPath, encoding: "utf8" });
+    assert.equal(stdout.trim(), created.branch);
+  } finally {
+    await fs.rm(groupRoot, { recursive: true, force: true });
+  }
+});
+
+test("does not reuse an unrelated directory as an issue worktree", async () => {
+  const groupRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-issue-worktree-conflict-"));
+  const repositoryRoot = path.join(groupRoot, "app");
+  try {
+    await fs.mkdir(repositoryRoot);
+    await execFileAsync("git", ["init", "-b", "develop"], { cwd: repositoryRoot });
+    await fs.mkdir(path.join(groupRoot, ".worktrees", "app-issue-35"), { recursive: true });
+
+    await assert.rejects(
+      () => new IssueWorktreeManager().prepare(groupRoot, repositoryRoot, 35, "Conflict"),
+      /git|リポジトリ|worktree/i,
+    );
+  } finally {
+    await fs.rm(groupRoot, { recursive: true, force: true });
   }
 });
