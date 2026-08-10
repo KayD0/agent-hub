@@ -51,11 +51,21 @@ export class RepositoryDiffPanel implements vscode.Disposable {
 
   private async handleMessage(repositoryId: string, value: unknown): Promise<void> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
-    const message = value as { type?: unknown; path?: unknown; commit?: unknown };
+    const message = value as { type?: unknown; path?: unknown; commit?: unknown; repository?: unknown; baseBranch?: unknown };
     try {
       if (message.type === "refresh") {
         const panel = this.panels.get(repositoryId);
         if (panel) await this.render(repositoryId, panel);
+      } else if (message.type === "setBaseBranch" && typeof message.repository === "string" && typeof message.baseBranch === "string") {
+        const group = this.manager.get(repositoryId);
+        const panel = this.panels.get(repositoryId);
+        if (group && panel) {
+          const snapshot = await this.manager.groupSnapshot(group);
+          const target = snapshot.repositories.find((item) => item.id === message.repository);
+          if (!target) throw new Error("対象リポジトリが見つかりません。");
+          await this.manager.setBaseBranch(target.rootPath, message.baseBranch);
+          await this.render(repositoryId, panel);
+        }
       } else if (message.type === "selectDiff" && typeof message.path === "string") {
         this.selectedPaths.set(repositoryId, message.path);
         this.selectedCommits.delete(repositoryId);
@@ -138,18 +148,18 @@ export class RepositoryDiffPanel implements vscode.Disposable {
         "@media(max-width:700px){body{overflow:auto}.layout{grid-template-columns:1fr;height:auto}nav{max-height:38vh;border-right:0}",
         "@media(max-width:700px){body{overflow:auto}.layout{grid-template-columns:1fr;height:auto}.pane-resizer{display:none}nav{max-height:38vh;border-right:0}",
       )
-      .replace("</style>", `${changedFileStyle()}${historyStyle()}</style>`)
-      .replace("</script>", `${changedFileScript()}${commitFileScript()}${paneResizerScript()}${fileBrowserScript()}</script>`);
+      .replace("</style>", `${changedFileStyle()}${historyStyle()}${mergeStatusStyle()}</style>`)
+      .replace("</script>", `${changedFileScript()}${commitFileScript()}${paneResizerScript()}${fileBrowserScript()}${baseBranchScript()}</script>`);
   }
 }
 
 function repositoryRows(repository: RepositorySnapshot, selectedKey: string | undefined): string {
   const rows = repository.files.map((file) => fileRow(repository, file, `${repository.id}::${file.path}` === selectedKey)).join("");
-  return rows ? `<section><div class="repo-heading">${escapeHtml(repository.name)}<span>${escapeHtml(repository.relativePath)}・${repository.branch ? escapeHtml(repository.branch) : "detached"}</span></div>${rows}</section>` : "";
+  return rows ? `<section>${repositoryHeading(repository, "div")}${rows}</section>` : "";
 }
 
 function historyRows(value: { repository: RepositorySnapshot; commits: RepositoryCommit[]; error?: string }, selectedKey?: string, selectedFiles: RepositoryFileChange[] = [], selectedFile?: string): string {
-  const heading = `<summary class="repo-heading">${escapeHtml(value.repository.name)}<span>${escapeHtml(value.repository.relativePath)}・${value.repository.branch ? escapeHtml(value.repository.branch) : "detached"}</span></summary>`;
+  const heading = repositoryHeading(value.repository, "summary");
   if (value.error) return `<details class="history-repository" data-history-repository="${escapeHtml(value.repository.id)}" open>${heading}<p class="empty-list error-text">履歴を取得できませんでした: ${escapeHtml(value.error)}</p></details>`;
   if (!value.commits.length) return `<details class="history-repository" data-history-repository="${escapeHtml(value.repository.id)}" open>${heading}<p class="empty-list">コミット履歴はありません。</p></details>`;
   return `<details class="history-repository" data-history-repository="${escapeHtml(value.repository.id)}" open>${heading}${value.commits.map((commit) => {
@@ -173,6 +183,24 @@ function changedFileStyle(): string {
 
 function historyStyle(): string {
   return `.history-repository>.repo-heading{cursor:pointer;list-style:none}.history-repository>.repo-heading::-webkit-details-marker{display:none}.history-repository>.repo-heading::before{display:inline-block;width:14px;content:"›";transition:transform .12s ease}.history-repository[open]>.repo-heading::before{transform:rotate(90deg)}.history-repository>.repo-heading:hover,.history-repository>.repo-heading:focus-visible{background:var(--vscode-list-hoverBackground);outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}.commit{display:block;width:100%;padding:7px 12px;overflow:hidden;border-bottom:1px solid var(--vscode-panel-border);color:var(--vscode-foreground);background:transparent;text-align:left;text-overflow:ellipsis;white-space:nowrap;font:inherit;font-size:12px}.commit:hover,.commit:focus-visible{background:var(--vscode-list-hoverBackground);outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}.commit[aria-selected="true"]{font-weight:600;background:var(--vscode-list-inactiveSelectionBackground)}.commit-files{padding-left:12px;background:var(--vscode-sideBar-background)}.commit-files .commit-file{grid-template-columns:24px minmax(0,1fr);padding:3px 12px 3px 20px;font-size:12px}.commit-files .commit-file[aria-selected="true"]{color:var(--vscode-list-activeSelectionForeground);background:var(--vscode-list-activeSelectionBackground)}.error-text{color:var(--vscode-errorForeground)}`;
+}
+
+function repositoryHeading(repository: RepositorySnapshot, element: "div" | "summary"): string {
+  const options = repository.baseBranchCandidates.map((branch) => `<option value="${escapeHtml(branch)}"${branch === repository.baseBranch ? " selected" : ""}>${escapeHtml(branch)}</option>`).join("");
+  const select = options ? `<label class="base-branch" title="マージ判定の基準ブランチ">基準 <select data-base-branch="${escapeHtml(repository.id)}">${options}</select></label>` : "";
+  return `<${element} class="repo-heading">${escapeHtml(repository.name)}<span>${escapeHtml(repository.relativePath)}・${repository.branch ? escapeHtml(repository.branch) : "detached"}</span><span class="merge-status ${repository.mergeStatus}">${mergeStatusLabel(repository.mergeStatus)}</span>${select}</${element}>`;
+}
+
+function mergeStatusLabel(status: RepositorySnapshot["mergeStatus"]): string {
+  return ({ base: "基準ブランチ", merged: "マージ済み", unmerged: "未マージ", unknown: "判定不能" } as const)[status];
+}
+
+function mergeStatusStyle(): string {
+  return `.repo-heading{display:flex;align-items:center;gap:6px}.repo-heading>span{margin-left:0}.merge-status{flex:none;padding:1px 5px;border:1px solid var(--vscode-panel-border);border-radius:8px}.merge-status.merged{color:var(--vscode-testing-iconPassed)}.merge-status.unmerged{color:var(--vscode-testing-iconQueued,var(--vscode-charts-yellow))}.base-branch{display:flex;min-width:0;align-items:center;gap:4px;margin-left:auto;color:var(--vscode-descriptionForeground);font-size:11px;font-weight:400}.base-branch select{min-width:70px;max-width:140px;color:var(--vscode-dropdown-foreground);background:var(--vscode-dropdown-background);border:1px solid var(--vscode-dropdown-border);font:inherit}`;
+}
+
+function baseBranchScript(): string {
+  return `document.querySelectorAll('[data-base-branch]').forEach(select=>{select.addEventListener('click',event=>event.stopPropagation());select.addEventListener('change',event=>{event.stopPropagation();vscode.postMessage({type:'setBaseBranch',repository:select.dataset.baseBranch,baseBranch:select.value});});});`;
 }
 
 function changedFileScript(): string {

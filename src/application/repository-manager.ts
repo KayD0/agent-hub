@@ -5,10 +5,12 @@ import { DiscoveredRepository, RegisteredRepository, RepositoryGroupSnapshot, Re
 import { GitRepositoryReader } from "../infrastructure/git/git-repository-reader";
 
 const STORAGE_KEY = "agentHub.repositories.v1";
+const BASE_BRANCH_STORAGE_KEY = "agentHub.repositoryBaseBranches.v1";
 const IGNORED_DIRECTORIES = new Set([".git", ".vscode-test", "node_modules", "dist", "out", "build", "coverage", "artifacts", ".next"]);
 
 export class RepositoryManager implements vscode.Disposable {
   private repositories: RegisteredRepository[];
+  private baseBranches: Record<string, string>;
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   private readonly gitWatchers = new Map<string, vscode.FileSystemWatcher>();
   private readonly worktreeWatchers = new Map<string, vscode.FileSystemWatcher>();
@@ -18,6 +20,7 @@ export class RepositoryManager implements vscode.Disposable {
   public constructor(private readonly state: vscode.Memento, private readonly reader: GitRepositoryReader) {
     const stored = state.get<unknown>(STORAGE_KEY, []);
     this.repositories = Array.isArray(stored) ? stored.filter(isRegisteredRepository) : [];
+    this.baseBranches = state.get<Record<string, string>>(BASE_BRANCH_STORAGE_KEY, {});
   }
 
   public list(): readonly RegisteredRepository[] { return this.repositories; }
@@ -52,11 +55,23 @@ export class RepositoryManager implements vscode.Disposable {
   public async snapshot(repository: DiscoveredRepository): Promise<RepositorySnapshot> {
     const openInWorkspace = (vscode.workspace.workspaceFolders ?? []).some((folder) => isInside(repository.rootPath, folder.uri.fsPath));
     try {
-      const [branch, files] = await Promise.all([this.reader.readBranch(repository.rootPath), this.reader.readChanges(repository.rootPath)]);
-      return { ...repository, openInWorkspace, branch, files, additions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0), deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0) };
+      const [branch, files, baseBranchCandidates] = await Promise.all([this.reader.readBranch(repository.rootPath), this.reader.readChanges(repository.rootPath), this.reader.readBranches(repository.rootPath)]);
+      const configuredBase = this.baseBranches[repositoryKey(repository.rootPath)];
+      const baseBranch = configuredBase && baseBranchCandidates.includes(configuredBase) ? configuredBase : await this.reader.readDefaultBranch(repository.rootPath, baseBranchCandidates);
+      const merged = await this.reader.isMergedInto(repository.rootPath, branch, baseBranch);
+      const mergeStatus = !branch || !baseBranch || merged === undefined ? "unknown" : branch === baseBranch ? "base" : merged ? "merged" : "unmerged";
+      return { ...repository, openInWorkspace, branch, baseBranch, baseBranchCandidates, mergeStatus, files, additions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0), deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0) };
     } catch (error) {
-      return { ...repository, openInWorkspace, files: [], additions: 0, deletions: 0, error: errorMessage(error) };
+      return { ...repository, openInWorkspace, baseBranchCandidates: [], mergeStatus: "unknown", files: [], additions: 0, deletions: 0, error: errorMessage(error) };
     }
+  }
+
+  public async setBaseBranch(rootPath: string, baseBranch: string): Promise<void> {
+    const candidates = await this.reader.readBranches(rootPath);
+    if (!candidates.includes(baseBranch)) throw new Error("選択された基準ブランチが見つかりません。");
+    this.baseBranches = { ...this.baseBranches, [repositoryKey(rootPath)]: baseBranch };
+    await this.state.update(BASE_BRANCH_STORAGE_KEY, this.baseBranches);
+    this.changeEmitter.fire();
   }
 
   public async groupSnapshot(group: RegisteredRepository): Promise<RepositoryGroupSnapshot> {
@@ -144,3 +159,4 @@ function isRegisteredRepository(value: unknown): value is RegisteredRepository {
 function samePath(left: string, right: string): boolean { return path.resolve(left).toLocaleLowerCase() === path.resolve(right).toLocaleLowerCase(); }
 function isInside(candidate: string, root: string): boolean { const relative = path.relative(path.resolve(root), path.resolve(candidate)); return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)); }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function repositoryKey(rootPath: string): string { return path.resolve(rootPath).toLocaleLowerCase(); }

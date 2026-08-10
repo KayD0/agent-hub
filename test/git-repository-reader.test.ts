@@ -59,6 +59,32 @@ test("commit file reads reject values that are not full commit hashes", async ()
   await assert.rejects(() => reader.readCommitFileDiff(process.cwd(), "a".repeat(40), ""), /ファイルパスが指定されていません/);
 });
 
+test("lists selectable branches and detects whether the current branch is merged", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-merge-status-"));
+  try {
+    await execFileAsync("git", ["init", "-b", "develop"], { cwd: root });
+    await execFileAsync("git", ["config", "user.email", "agenthub@example.test"], { cwd: root });
+    await execFileAsync("git", ["config", "user.name", "AgentHub Test"], { cwd: root });
+    await fs.writeFile(path.join(root, "README.md"), "initial\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root });
+    await execFileAsync("git", ["switch", "-c", "feature/test"], { cwd: root });
+    await fs.writeFile(path.join(root, "feature.txt"), "feature\n");
+    await execFileAsync("git", ["add", "feature.txt"], { cwd: root });
+    await execFileAsync("git", ["commit", "-m", "feature"], { cwd: root });
+    const reader = new GitRepositoryReader();
+
+    assert.deepEqual(await reader.readBranches(root), ["develop", "feature/test"]);
+    assert.equal(await reader.readDefaultBranch(root, await reader.readBranches(root)), "develop");
+    assert.equal(await reader.isMergedInto(root, "feature/test", "develop"), false);
+    await execFileAsync("git", ["switch", "develop"], { cwd: root });
+    await execFileAsync("git", ["merge", "--ff-only", "feature/test"], { cwd: root });
+    assert.equal(await reader.isMergedInto(root, "feature/test", "develop"), true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("renders an untracked file as an inline unified diff", async () => {
   const reader = new GitRepositoryReader();
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-inline-diff-"));

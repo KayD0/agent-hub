@@ -26,6 +26,9 @@ export interface RepositoryFileChange {
 export interface RepositorySnapshot extends DiscoveredRepository {
   openInWorkspace: boolean;
   branch?: string;
+  baseBranch?: string;
+  baseBranchCandidates: string[];
+  mergeStatus: "base" | "merged" | "unmerged" | "unknown";
   files: RepositoryFileChange[];
   additions: number;
   deletions: number;
