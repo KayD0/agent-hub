@@ -43,7 +43,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, new RepositoryFileReader(), showError);
   const githubIssueClient = new GitHubIssueClient();
-  const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, githubIssueClient, async (issue, groupId) => {
+  const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, githubIssueClient, async (issue, groupId, targetMode) => {
     if (!authentication.isAuthenticated()) {
       const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
       if (action) await vscode.commands.executeCommand("agentHub.login");
@@ -51,26 +51,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     const group = repositoryManager.get(groupId);
     if (!group) throw new Error("登録済みフォルダが見つかりません。");
+    const prompt = issuePrompt(issue);
+    const linkedIssue = {
+      repository: issue.repository.slug,
+      number: issue.number,
+      title: issue.title,
+      url: issue.url,
+      worktree: issue.repository.rootPath,
+    };
+    if (targetMode === "new") {
+      const session = await startSession(context, manager!, vscode.Uri.file(issue.repository.rootPath), prompt);
+      if (session) {
+        await manager!.linkGitHubIssue(session.id, linkedIssue);
+        detailPanel.show(session.id);
+      }
+      return;
+    }
     const sessions = manager!.list().filter((session) => isInside(session.cwd, group.rootPath));
-    const choices: Array<vscode.QuickPickItem & { sessionId?: string }> = [
-      { label: "$(add) 新しいセッションを開始", description: issue.repository.rootPath },
-      ...sessions.map((session) => ({
+    if (!sessions.length) {
+      void vscode.window.showInformationMessage("Issueを渡せる既存セッションがありません。新規セッションを選択してください。");
+      return;
+    }
+    const choices: Array<vscode.QuickPickItem & { sessionId: string }> = sessions.map((session) => ({
         label: `$(comment-discussion) ${session.title}`,
         description: `${session.status} · ${session.cwd}`,
         sessionId: session.id,
-      })),
-    ];
+      }));
     const selected = await vscode.window.showQuickPick(choices, {
       title: `Issue ${issue.repository.slug}#${issue.number} を渡すセッション`,
-      placeHolder: "新しいセッション、または既存セッションを選択",
+      placeHolder: "既存セッションを選択",
     });
     if (!selected) return;
-    const prompt = issuePrompt(issue);
-    if (!selected.sessionId) {
-      const session = await startSession(context, manager!, vscode.Uri.file(issue.repository.rootPath), prompt);
-      if (session) detailPanel.show(session.id);
-      return;
-    }
     const target = manager!.get(selected.sessionId);
     if (!target) throw new Error("選択したセッションが見つかりません。");
     if (!samePath(target.cwd, issue.repository.rootPath)) {

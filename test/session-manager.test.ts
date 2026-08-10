@@ -550,6 +550,25 @@ test("attaching an issue steers an active session and persists the relationship"
   assert.equal(repository.value[0]?.relatedIssues?.[0]?.repository, "KayD0/agent-hub");
 });
 
+test("linking an issue to a newly started session does not send the instruction twice", async () => {
+  const gateway = new FakeGateway();
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(gateway, repository);
+  const session = await manager.createSession("C:\\work", "Handle issue #18");
+
+  await manager.linkGitHubIssue(session.id, {
+    repository: "KayD0/agent-hub",
+    number: 18,
+    title: "Issue integration",
+    url: "https://github.com/KayD0/agent-hub/issues/18",
+    worktree: "C:\\work",
+  });
+
+  assert.equal(gateway.turns.length, 1);
+  assert.equal(manager.get(session.id)?.relatedIssues[0]?.number, 18);
+  assert.equal(repository.value[0]?.relatedIssues?.[0]?.repository, "KayD0/agent-hub");
+});
+
 test("attaching an issue starts a new turn for an idle session without duplicating the relationship", async () => {
   const gateway = new FakeGateway();
   const repository = new MemoryRepository();

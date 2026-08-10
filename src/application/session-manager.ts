@@ -248,8 +248,12 @@ export class SessionManager {
   }
 
   public async attachGitHubIssue(sessionId: string, issue: Omit<RelatedGitHubIssue, "linkedAt">, instruction: string): Promise<void> {
-    const session = this.requireSession(sessionId);
     await this.sendMessage(sessionId, instruction);
+    await this.linkGitHubIssue(sessionId, issue);
+  }
+
+  public async linkGitHubIssue(sessionId: string, issue: Omit<RelatedGitHubIssue, "linkedAt">): Promise<void> {
+    const session = this.requireSession(sessionId);
     const linked: RelatedGitHubIssue = { ...issue, linkedAt: Date.now() };
     const existing = session.relatedIssues.findIndex((candidate) => candidate.repository === issue.repository && candidate.number === issue.number);
     if (existing >= 0) session.relatedIssues[existing] = linked;
