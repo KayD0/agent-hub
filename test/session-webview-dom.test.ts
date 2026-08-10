@@ -12,6 +12,7 @@ const session = (id: string, overrides: Record<string, unknown> = {}): Record<st
   status: "running",
   currentActivity: "処理中",
   autoApprove: false,
+  unrestrictedAutoApprove: false,
   repositoryGroupIds: ["app"],
   ...overrides,
 });
@@ -152,6 +153,20 @@ test("session Auto toggle posts the stable approval contract", async (context) =
   assert.equal(dom.window.document.querySelector<HTMLInputElement>(".auto-control input")?.checked, true);
 });
 
+test("session unrestricted Auto toggle posts a separate approval contract", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one")]);
+  const checkbox = dom.window.document.querySelector<HTMLInputElement>(".unrestricted-auto-control input")!;
+  assert.equal(checkbox.checked, false);
+  checkbox.checked = true;
+  checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "unrestrictedAutoApprove", sessionId: "one", enabled: true }));
+  update(dom, [session("one", { unrestrictedAutoApprove: true })]);
+  assert.equal(dom.window.document.querySelector<HTMLInputElement>(".unrestricted-auto-control input")?.checked, true);
+  assert.equal(dom.window.document.querySelector<HTMLElement>(".session")?.dataset.unrestrictedAuto, "true");
+});
+
 test("safe bulk approval appears only for matching approval requests", async (context) => {
   const { dom, posted } = await createWebview();
   context.after(() => dom.window.close());
@@ -182,8 +197,8 @@ test("running session places interrupt before Auto", async (context) => {
   update(dom, [session("one", { status: "running" })]);
 
   const actions = [...dom.window.document.querySelector(".header-actions")!.children];
-  assert.deepEqual(actions.map((node) => node.className), ["secondary header-action", "auto-control"]);
-  assert.equal(actions.map((node) => node.textContent?.trim()).join("|"), "中断|Auto");
+  assert.deepEqual(actions.map((node) => node.className), ["secondary header-action", "auto-control", "auto-control unrestricted-auto-control"]);
+  assert.equal(actions.map((node) => node.textContent?.trim()).join("|"), "中断|Auto|無制限Auto");
 });
 
 test("session details open from the card without a dedicated button", async (context) => {

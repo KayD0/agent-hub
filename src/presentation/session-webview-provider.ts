@@ -6,7 +6,7 @@ import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
 
-type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "origin" | "relatedIssues" | "autoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
+type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "origin" | "relatedIssues" | "autoApprove" | "unrestrictedAutoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
 type RepositoryGroupFilter = { id: string; name: string; rootPath: string };
 
 interface WebviewMessage {
@@ -120,7 +120,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
 
   private snapshot(): SessionViewModel[] {
     const groups = this.listRepositoryGroups();
-    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, origin, relatedIssues, autoApprove, pendingInteraction, cwd }) => ({
+    return this.manager.list().map(({ id, title, status, currentActivity, finalResult, lastInstruction, origin, relatedIssues, autoApprove, unrestrictedAutoApprove, pendingInteraction, cwd }) => ({
       id,
       title,
       status,
@@ -130,6 +130,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
       origin,
       relatedIssues,
       autoApprove,
+      unrestrictedAutoApprove,
       pendingInteraction,
       repositoryGroupIds: groups.filter((group) => isInside(cwd, group.rootPath)).map((group) => group.id),
     }));
@@ -169,6 +170,18 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     try {
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());
       else if (message.type === "autoApprove" && typeof message.enabled === "boolean") this.manager.setAutoApprove(sessionId, message.enabled);
+      else if (message.type === "unrestrictedAutoApprove" && typeof message.enabled === "boolean") {
+        if (!message.enabled) this.manager.setUnrestrictedAutoApprove(sessionId, false);
+        else {
+          const answer = await vscode.window.showWarningMessage(
+            "無制限Autoを有効にすると、削除・外部送信・セッション外のファイル変更を含むすべての承認要求を安全ポリシーなしで自動承認します。",
+            { modal: true },
+            "無制限Autoを有効化",
+          );
+          if (answer === "無制限Autoを有効化") this.manager.setUnrestrictedAutoApprove(sessionId, true);
+          else this.refresh(true);
+        }
+      }
       else if (message.type === "open") { this.manager.markRead(sessionId); this.openSession(sessionId); }
       else if (message.type === "openAnalysisResult") this.openAnalysisResult(sessionId);
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);

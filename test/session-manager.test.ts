@@ -239,6 +239,78 @@ test("auto mode keeps unmatched commands pending for manual review", async () =>
   if (pending?.kind === "approval") assert.match(pending.policyReason, /一致しません/);
 });
 
+test("unrestricted auto mode approves unmatched commands and records the bypass", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Publish");
+  manager.setUnrestrictedAutoApprove(session.id, true);
+
+  gateway.emitRequest({
+    id: 470,
+    method: "item/commandExecution/requestApproval",
+    params: { threadId: session.threadId, command: "git push --force origin main" },
+  });
+
+  assert.deepEqual(gateway.responses, [{ id: 470, result: { decision: "acceptForSession" } }]);
+  assert.equal(manager.get(session.id)?.pendingInteraction, undefined);
+  assert.equal(manager.get(session.id)?.approvalAudit[0]?.matchedRule, "unrestricted_auto");
+  assert.match(manager.get(session.id)?.approvalAudit[0]?.reason ?? "", /安全ポリシーを適用せず/);
+});
+
+test("unrestricted auto mode approves file changes outside the session policy", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Edit external file");
+  manager.setUnrestrictedAutoApprove(session.id, true);
+
+  gateway.emitRequest({
+    id: 472,
+    method: "item/fileChange/requestApproval",
+    params: { threadId: session.threadId, grantRoot: "C:\\outside" },
+  });
+
+  assert.deepEqual(gateway.responses, [{ id: 472, result: { decision: "acceptForSession" } }]);
+  assert.equal(manager.get(session.id)?.approvalAudit[0]?.operation, "file_change");
+  assert.equal(manager.get(session.id)?.approvalAudit[0]?.subject, "C:\\outside");
+  assert.equal(manager.get(session.id)?.approvalAudit[0]?.matchedRule, "unrestricted_auto");
+});
+
+test("unrestricted auto mode does not answer user input and is not persisted", async () => {
+  const gateway = new FakeGateway();
+  const repository = new MemoryRepository();
+  const manager = new SessionManager(gateway, repository);
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work", "Ask first");
+  manager.setUnrestrictedAutoApprove(session.id, true);
+
+  gateway.emitRequest({
+    id: 471,
+    method: "item/tool/requestUserInput",
+    params: { threadId: session.threadId, questions: [{ id: "confirm", question: "Continue?" }] },
+  });
+
+  assert.deepEqual(gateway.responses, []);
+  assert.equal(manager.get(session.id)?.status, "waiting_for_input");
+  assert.equal("unrestrictedAutoApprove" in (repository.value[0] ?? {}), false);
+});
+
+test("normal and unrestricted auto modes are mutually exclusive", async () => {
+  const manager = new SessionManager(new FakeGateway(), new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work");
+
+  manager.setAutoApprove(session.id, true);
+  manager.setUnrestrictedAutoApprove(session.id, true);
+  assert.equal(manager.get(session.id)?.autoApprove, false);
+  assert.equal(manager.get(session.id)?.unrestrictedAutoApprove, true);
+
+  manager.setAutoApprove(session.id, true);
+  assert.equal(manager.get(session.id)?.autoApprove, true);
+  assert.equal(manager.get(session.id)?.unrestrictedAutoApprove, false);
+});
+
 test("bulk approval accepts only requests that match the safety policy", async () => {
   const gateway = new FakeGateway();
   const repository = new MemoryRepository();

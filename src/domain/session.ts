@@ -107,6 +107,7 @@ export interface ManagedSession {
   origin?: FolderAnalysisOrigin;
   relatedIssues: RelatedGitHubIssue[];
   autoApprove: boolean;
+  unrestrictedAutoApprove: boolean;
   approvalAudit: ApprovalAuditEntry[];
   currentTurnId?: string;
   pendingInteraction?: PendingInteraction;
@@ -148,6 +149,6 @@ export function attentionForStatus(status: SessionStatus): AttentionLevel {
 }
 
 export function toPersistedSession(session: ManagedSession): PersistedSession {
-  const { activities: _activities, autoApprove: _autoApprove, pendingInteraction: _pending, currentTurnId: _turn, ...persisted } = session;
+  const { activities: _activities, autoApprove: _autoApprove, unrestrictedAutoApprove: _unrestrictedAutoApprove, pendingInteraction: _pending, currentTurnId: _turn, ...persisted } = session;
   return persisted;
 }

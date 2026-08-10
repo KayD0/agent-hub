@@ -134,6 +134,7 @@ export class SessionManager {
       lastInstruction: prompt?.trim() || undefined,
       relatedIssues: [],
       autoApprove: false,
+      unrestrictedAutoApprove: false,
       approvalAudit: [],
       unread: false,
       startedAt: now,
@@ -250,6 +251,7 @@ export class SessionManager {
   public setAutoApprove(sessionId: string, enabled: boolean): void {
     const session = this.requireSession(sessionId);
     session.autoApprove = enabled;
+    if (enabled) session.unrestrictedAutoApprove = false;
     this.appendActivity(session, "system", enabled ? "Auto承認を有効化" : "Auto承認を無効化");
     if (enabled && session.pendingInteraction?.kind === "approval") {
       const pending = session.pendingInteraction;
@@ -257,6 +259,18 @@ export class SessionManager {
         this.resolveAutoApproval(session, pending);
         return;
       }
+    }
+    this.emitChange(session.id);
+  }
+
+  public setUnrestrictedAutoApprove(sessionId: string, enabled: boolean): void {
+    const session = this.requireSession(sessionId);
+    session.unrestrictedAutoApprove = enabled;
+    if (enabled) session.autoApprove = false;
+    this.appendActivity(session, "system", enabled ? "無制限Auto承認を有効化" : "無制限Auto承認を無効化");
+    if (enabled && session.pendingInteraction?.kind === "approval") {
+      this.resolveUnrestrictedAutoApproval(session, session.pendingInteraction);
+      return;
     }
     this.emitChange(session.id);
   }
@@ -387,6 +401,10 @@ export class SessionManager {
         allowForSession: true,
       };
       this.appendActivity(session, "command", "承認待ち", command ?? reason);
+      if (session.unrestrictedAutoApprove) {
+        this.resolveUnrestrictedAutoApproval(session, session.pendingInteraction);
+        return;
+      }
       if (session.autoApprove && policyResult.autoApprove) {
         this.resolveAutoApproval(session, session.pendingInteraction, policyResult.matchedCommand);
         return;
@@ -415,6 +433,10 @@ export class SessionManager {
         allowForSession: true,
       };
       this.appendActivity(session, "file", "承認待ち", reason ?? grantRoot);
+      if (session.unrestrictedAutoApprove) {
+        this.resolveUnrestrictedAutoApproval(session, session.pendingInteraction);
+        return;
+      }
       if (session.autoApprove && policyResult.autoApprove) {
         this.resolveAutoApproval(session, session.pendingInteraction);
         return;
@@ -585,6 +607,24 @@ export class SessionManager {
     this.setStatus(session, "running", "Auto承認ポリシーを適用しました");
   }
 
+  private resolveUnrestrictedAutoApproval(
+    session: ManagedSession,
+    pending: Extract<NonNullable<ManagedSession["pendingInteraction"]>, { kind: "approval" }>,
+  ): void {
+    this.gateway.respond(pending.requestId, { decision: pending.allowForSession ? "acceptForSession" : "accept" });
+    this.appendApprovalAudit(session, {
+      timestamp: Date.now(),
+      operation: pending.method === "item/commandExecution/requestApproval" ? "command" : "file_change",
+      subject: pending.command ?? pending.targetPath ?? pending.description,
+      decision: "auto_approved",
+      reason: "無制限Autoにより安全ポリシーを適用せず自動承認しました",
+      matchedRule: "unrestricted_auto",
+    });
+    this.appendActivity(session, "system", "無制限Autoにより自動承認", pending.command ?? pending.targetPath ?? pending.description);
+    session.pendingInteraction = undefined;
+    this.setStatus(session, "running", "無制限Auto承認を適用しました");
+  }
+
   private appendApprovalAudit(session: ManagedSession, entry: ManagedSession["approvalAudit"][number]): void {
     session.approvalAudit.push(entry);
     if (session.approvalAudit.length > MAX_APPROVAL_AUDIT_ENTRIES) {
@@ -602,6 +642,7 @@ export class SessionManager {
     return {
       ...persisted,
       autoApprove: false,
+      unrestrictedAutoApprove: false,
       approvalAudit: persisted.approvalAudit ?? [],
       relatedIssues: persisted.relatedIssues ?? [],
       pendingInteraction: undefined,

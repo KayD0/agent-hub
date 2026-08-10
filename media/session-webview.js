@@ -278,12 +278,18 @@
       checkbox.type = "checkbox";
       checkbox.addEventListener("change", () => vscode.postMessage({ type: "autoApprove", sessionId: card.dataset.sessionId, enabled: checkbox.checked }));
       auto.append(checkbox, document.createTextNode("Auto"));
+      const unrestrictedAuto = el("label", "auto-control unrestricted-auto-control");
+      unrestrictedAuto.title = "安全ポリシーを適用せず、すべての承認要求を自動承認（再起動時にOFF）";
+      const unrestrictedCheckbox = el("input");
+      unrestrictedCheckbox.type = "checkbox";
+      unrestrictedCheckbox.addEventListener("change", () => vscode.postMessage({ type: "unrestrictedAutoApprove", sessionId: card.dataset.sessionId, enabled: unrestrictedCheckbox.checked }));
+      unrestrictedAuto.append(unrestrictedCheckbox, document.createTextNode("無制限Auto"));
       if (["starting", "running", "waiting_for_input"].includes(session.status)) {
         const interrupt = button("中断", "処理を中断", () => vscode.postMessage({ type: "interrupt", sessionId: card.dataset.sessionId }), true);
         interrupt.classList.add("header-action");
         container.append(interrupt);
       }
-      container.append(auto);
+      container.append(auto, unrestrictedAuto);
       if (["ready", "completed", "failed", "interrupted", "disconnected"].includes(session.status)) {
         const remove = button("×", "一覧から削除", () => vscode.postMessage({ type: "remove", sessionId: card.dataset.sessionId }));
         remove.className = "icon-button";
@@ -293,6 +299,10 @@
     const checkbox = container.querySelector(".auto-control input");
     checkbox.checked = session.autoApprove;
     checkbox.setAttribute("aria-label", session.title + "の安全なAuto承認");
+    const unrestrictedCheckbox = container.querySelector(".unrestricted-auto-control input");
+    unrestrictedCheckbox.checked = session.unrestrictedAutoApprove;
+    unrestrictedCheckbox.setAttribute("aria-label", session.title + "の無制限Auto承認");
+    card.dataset.unrestrictedAuto = session.unrestrictedAutoApprove ? "true" : "false";
   }
 
   function updateInstruction(card, session) {
