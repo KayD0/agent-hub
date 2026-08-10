@@ -18,6 +18,7 @@
   let authentication = { status: "checking" };
   let grid;
   let empty;
+  let approvalBanner;
   let draggedSessionId;
   let composingSessionId;
 
@@ -70,6 +71,35 @@
     if (!message) { empty?.remove(); empty = undefined; return; }
     if (!empty) { empty = el("p", "empty"); root.append(empty); }
     empty.textContent = message;
+  }
+
+  function updateApprovalBanner() {
+    const approvals = sessions.filter((session) => session.pendingInteraction?.kind === "approval");
+    const safe = approvals.filter((session) => session.pendingInteraction.matchedRule);
+    if (!approvalBanner) {
+      approvalBanner = el("section", "approval-banner");
+      approvalBanner.setAttribute("aria-label", "承認待ちの操作");
+      approvalBanner.setAttribute("aria-live", "polite");
+      const summary = el("span", "approval-banner-summary");
+      const actions = el("div", "approval-banner-actions");
+      const review = button("内容を確認", "最初の承認待ちセッションへ移動", () => {
+        const first = sessions.find((session) => session.pendingInteraction?.kind === "approval");
+        const card = first ? cards.get(first.id) : undefined;
+        card?.scrollIntoView({ block: "center", behavior: "smooth" });
+        card?.focus({ preventScroll: true });
+      }, true);
+      const approve = button("安全に一括承認", "安全ポリシーに一致する操作を今回のみ一括承認", () => vscode.postMessage({ type: "bulkApprove" }));
+      approve.classList.add("bulk-approve");
+      actions.append(review, approve);
+      approvalBanner.append(summary, actions);
+      root.prepend(approvalBanner);
+    }
+    approvalBanner.hidden = authentication.status !== "authenticated" || !approvals.length;
+    approvalBanner.querySelector(".approval-banner-summary").textContent = `承認待ち ${approvals.length}件・一括承認対象 ${safe.length}件`;
+    const approve = approvalBanner.querySelector(".bulk-approve");
+    approve.hidden = !safe.length;
+    approve.disabled = !safe.length;
+    approve.textContent = `安全に一括承認 (${safe.length})`;
   }
 
   function publishOrder() {
@@ -380,6 +410,7 @@
   function renderSessions() {
     sessionsById.clear();
     for (const session of sessions) sessionsById.set(session.id, session);
+    updateApprovalBanner();
     if (authentication.status !== "authenticated") { showEmpty(""); return; }
     const visible = selectedRepositoryGroupIds.size
       ? sessions.filter((session) => session.status === "waiting_for_approval" || session.repositoryGroupIds?.some((id) => selectedRepositoryGroupIds.has(id)))

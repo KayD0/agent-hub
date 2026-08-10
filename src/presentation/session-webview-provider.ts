@@ -142,6 +142,29 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
       try { await this.manager.reorder(message.sessionIds); } catch (error) { this.showError(error); }
       return;
     }
+    if (message.type === "bulkApprove") {
+      const approvals = this.manager.list().filter((session) => session.pendingInteraction?.kind === "approval");
+      const safe = approvals.filter((session) => session.pendingInteraction?.kind === "approval" && session.pendingInteraction.matchedRule);
+      if (!safe.length) return;
+      const details = safe.slice(0, 8).map((session) => {
+        const pending = session.pendingInteraction;
+        const subject = pending?.kind === "approval" ? pending.command ?? pending.targetPath ?? pending.description ?? pending.title : "";
+        return `・${session.title}: ${subject}`;
+      }).join("\n");
+      const omitted = safe.length > 8 ? `\nほか${safe.length - 8}件` : "";
+      const answer = await vscode.window.showWarningMessage(
+        `安全ポリシーに一致する${safe.length}件を今回のみ承認します。\n\n${details}${omitted}`,
+        { modal: true },
+        `${safe.length}件を承認`,
+      );
+      if (answer !== `${safe.length}件を承認`) return;
+      const candidates = safe.flatMap((session) => session.pendingInteraction?.kind === "approval"
+        ? [{ sessionId: session.id, requestId: session.pendingInteraction.requestId }]
+        : []);
+      const result = this.manager.resolveSafePendingApprovals(candidates);
+      void vscode.window.showInformationMessage(`${result.approved}件を承認しました${result.skipped ? `（${result.skipped}件は個別確認が必要です）` : ""}。`);
+      return;
+    }
     if (!sessionId) return;
     try {
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());

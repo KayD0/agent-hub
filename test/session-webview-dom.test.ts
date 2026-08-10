@@ -152,6 +152,30 @@ test("session Auto toggle posts the stable approval contract", async (context) =
   assert.equal(dom.window.document.querySelector<HTMLInputElement>(".auto-control input")?.checked, true);
 });
 
+test("safe bulk approval appears only for matching approval requests", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [
+    session("safe", { status: "waiting_for_approval", pendingInteraction: { kind: "approval", matchedRule: "command:npm test" } }),
+    session("manual", { status: "waiting_for_approval", pendingInteraction: { kind: "approval" } }),
+    session("input", { status: "waiting_for_input", pendingInteraction: { kind: "input", questions: [] } }),
+  ]);
+
+  const banner = dom.window.document.querySelector<HTMLElement>(".approval-banner")!;
+  assert.equal(banner.hidden, false);
+  assert.equal(banner.querySelector(".approval-banner-summary")?.textContent, "承認待ち 2件・一括承認対象 1件");
+  const approve = banner.querySelector<HTMLButtonElement>(".bulk-approve")!;
+  assert.equal(approve.textContent, "安全に一括承認 (1)");
+  approve.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "bulkApprove" }));
+
+  update(dom, [session("manual", { status: "waiting_for_approval", pendingInteraction: { kind: "approval" } })]);
+  assert.equal(banner.hidden, false);
+  assert.equal(approve.hidden, true);
+  update(dom, [session("input", { status: "waiting_for_input", pendingInteraction: { kind: "input", questions: [] } })]);
+  assert.equal(banner.hidden, true);
+});
+
 test("running session places interrupt before Auto", async (context) => {
   const { dom } = await createWebview();
   context.after(() => dom.window.close());

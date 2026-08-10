@@ -233,6 +233,20 @@ export class SessionManager {
     this.setStatus(session, "running", "承認結果をCodexへ送信しました");
   }
 
+  public resolveSafePendingApprovals(candidates?: readonly { sessionId: string; requestId: string | number }[]): { approved: number; skipped: number } {
+    const approvals = candidates ?? this.list().flatMap((session) => session.pendingInteraction?.kind === "approval"
+      ? [{ sessionId: session.id, requestId: session.pendingInteraction.requestId }]
+      : []);
+    let approved = 0;
+    for (const candidate of approvals) {
+      const session = this.sessions.get(candidate.sessionId);
+      if (!session?.pendingInteraction || session.pendingInteraction.kind !== "approval" || session.pendingInteraction.requestId !== candidate.requestId || !session.pendingInteraction.matchedRule) continue;
+      this.resolveApproval(candidate.sessionId, "accept");
+      approved += 1;
+    }
+    return { approved, skipped: approvals.length - approved };
+  }
+
   public setAutoApprove(sessionId: string, enabled: boolean): void {
     const session = this.requireSession(sessionId);
     session.autoApprove = enabled;

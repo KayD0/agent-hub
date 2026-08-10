@@ -239,6 +239,43 @@ test("auto mode keeps unmatched commands pending for manual review", async () =>
   if (pending?.kind === "approval") assert.match(pending.policyReason, /一致しません/);
 });
 
+test("bulk approval accepts only requests that match the safety policy", async () => {
+  const gateway = new FakeGateway();
+  const repository = new MemoryRepository();
+  repository.value = [
+    persistedSession("safe", "Safe", 1, "running"),
+    persistedSession("manual", "Manual", 2, "running"),
+  ];
+  const manager = new SessionManager(gateway, repository, undefined, { allowedCommands: ["npm test"], allowedPaths: [] });
+  await manager.initialize();
+  gateway.emitRequest({ id: 50, method: "item/commandExecution/requestApproval", params: { threadId: "safe", command: "npm test" } });
+  gateway.emitRequest({ id: 51, method: "item/commandExecution/requestApproval", params: { threadId: "manual", command: "git push --force" } });
+
+  const result = manager.resolveSafePendingApprovals();
+
+  assert.deepEqual(result, { approved: 1, skipped: 1 });
+  assert.deepEqual(gateway.responses, [{ id: 50, result: { decision: "accept" } }]);
+  assert.equal(manager.get("safe")?.pendingInteraction, undefined);
+  assert.equal(manager.get("manual")?.pendingInteraction?.kind, "approval");
+});
+
+test("bulk approval does not accept a request that changed during confirmation", async () => {
+  const gateway = new FakeGateway();
+  const repository = new MemoryRepository();
+  repository.value = [persistedSession("safe", "Safe", 1, "running")];
+  const manager = new SessionManager(gateway, repository, undefined, { allowedCommands: ["npm test"], allowedPaths: [] });
+  await manager.initialize();
+  gateway.emitRequest({ id: 52, method: "item/commandExecution/requestApproval", params: { threadId: "safe", command: "npm test" } });
+  const candidates = [{ sessionId: "safe", requestId: 52 }];
+  gateway.emitRequest({ id: 53, method: "item/commandExecution/requestApproval", params: { threadId: "safe", command: "npm test" } });
+
+  const result = manager.resolveSafePendingApprovals(candidates);
+
+  assert.deepEqual(result, { approved: 0, skipped: 1 });
+  assert.deepEqual(gateway.responses, []);
+  assert.equal(manager.get("safe")?.pendingInteraction?.kind, "approval");
+});
+
 test("bulk auto mode updates every existing session", async () => {
   const gateway = new FakeGateway();
   const manager = new SessionManager(gateway, new MemoryRepository());
