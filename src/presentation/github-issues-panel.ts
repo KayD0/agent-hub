@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { RepositoryManager } from "../application/repository-manager";
+import { isWorktreeRepository } from "../application/repository-visibility";
 import { GitHubIssue, GitHubIssueRepositoryResult } from "../domain/github-issue";
 import { GitHubIssueClient } from "../infrastructure/github/github-issue-client";
 
@@ -73,7 +74,8 @@ export class GitHubIssuesPanel implements vscode.Disposable {
     if (!group) { panel.dispose(); return; }
     const snapshot = await this.manager.groupSnapshot(group);
     for (const key of [...this.issues.keys()]) if (key.startsWith(`${groupId}:`)) this.issues.delete(key);
-    const repositories = await Promise.all(snapshot.repositories.map(async (repository) => {
+    const issueRepositories = snapshot.repositories.filter((repository) => !isWorktreeRepository(group.rootPath, repository.rootPath));
+    const repositories = await Promise.all(issueRepositories.map(async (repository) => {
       try {
         const ref = await this.client.repository(repository.rootPath);
         return { repositoryName: repository.name, ref };

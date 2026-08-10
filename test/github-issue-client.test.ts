@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
+import * as path from "node:path";
 import test from "node:test";
+import { isWorktreeRepository } from "../src/application/repository-visibility";
 import { githubIssueError, parseGitHubRemote, parseIssueList } from "../src/infrastructure/github/github-issue-client";
+
+test("identifies only repositories below the managed worktrees directory", () => {
+  const group = path.resolve("work", "group");
+  const worktree = path.join(group, ".worktrees", "app-issue-36");
+  assert.equal(isWorktreeRepository(group, worktree), true);
+  assert.equal(isWorktreeRepository(group, path.join(group, ".worktrees-old", "app")), false);
+  assert.equal(isWorktreeRepository(worktree, worktree), false);
+  assert.equal(isWorktreeRepository(group, path.join(group, "app")), false);
+});
 
 test("parses GitHub HTTPS and SSH remotes", () => {
   assert.deepEqual(parseGitHubRemote("https://github.com/KayD0/agent-hub.git"), { owner: "KayD0", name: "agent-hub", slug: "KayD0/agent-hub" });

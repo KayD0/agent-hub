@@ -5,7 +5,7 @@ import { DiscoveredRepository, RegisteredRepository, RepositoryGroupSnapshot, Re
 import { GitRepositoryReader } from "../infrastructure/git/git-repository-reader";
 
 const STORAGE_KEY = "agentHub.repositories.v1";
-const IGNORED_DIRECTORIES = new Set([".git", ".worktrees", ".vscode-test", "node_modules", "dist", "out", "build", "coverage", "artifacts", ".next"]);
+const IGNORED_DIRECTORIES = new Set([".git", ".vscode-test", "node_modules", "dist", "out", "build", "coverage", "artifacts", ".next"]);
 
 export class RepositoryManager implements vscode.Disposable {
   private repositories: RegisteredRepository[];
