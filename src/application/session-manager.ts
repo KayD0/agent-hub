@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import * as path from "node:path";
 import {
   InputQuestion,
   ManagedSession,
@@ -293,6 +294,17 @@ export class SessionManager {
     this.sessions.delete(sessionId);
     this.emitChange(sessionId, "collection");
     await this.persist();
+  }
+
+  public async removeByRootPath(rootPath: string): Promise<number> {
+    const sessionIds = this.list()
+      .filter((session) => isInside(session.cwd, rootPath))
+      .map((session) => session.id);
+    if (!sessionIds.length) return 0;
+    for (const sessionId of sessionIds) this.sessions.delete(sessionId);
+    this.emitChange(undefined, "collection");
+    await this.persist();
+    return sessionIds.length;
   }
 
   public markRead(sessionId: string): void {
@@ -616,6 +628,11 @@ function titleFromPath(cwd: string): string {
 function compact(value: string, length: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   return normalized.length <= length ? normalized : `${normalized.slice(0, length - 1)}…`;
+}
+
+function isInside(candidate: string, root: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function errorMessage(error: unknown): string {

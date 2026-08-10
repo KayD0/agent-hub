@@ -11,6 +11,7 @@ export class RepositoryWebviewProvider implements vscode.WebviewViewProvider {
     private readonly openTerminal: (repositoryId: string) => Promise<void>,
     private readonly createSession: (repositoryId: string) => Promise<void>,
     private readonly analyzeRepository: (repositoryId: string) => Promise<void>,
+    private readonly removeRepository: (repositoryId: string) => Promise<void>,
     private readonly onError: (error: unknown) => void,
   ) {}
   public resolveWebviewView(view: vscode.WebviewView): void { this.view = view; view.webview.options = { enableScripts: true }; view.webview.onDidReceiveMessage((message: unknown) => void this.handleMessage(message)); view.onDidDispose(() => { this.view = undefined; }); void this.refresh(); }
@@ -24,7 +25,7 @@ export class RepositoryWebviewProvider implements vscode.WebviewViewProvider {
       else if (typeof message.repositoryId === "string" && message.type === "openTerminal") await this.openTerminal(message.repositoryId);
       else if (typeof message.repositoryId === "string" && message.type === "createSession") await this.createSession(message.repositoryId);
       else if (typeof message.repositoryId === "string" && message.type === "analyze") await this.analyzeRepository(message.repositoryId);
-      else if (typeof message.repositoryId === "string" && message.type === "remove") { await this.manager.remove(message.repositoryId); await this.refresh(); }
+      else if (typeof message.repositoryId === "string" && message.type === "remove") await this.removeRepository(message.repositoryId);
     } catch (error) { this.onError(error); }
   }
 }

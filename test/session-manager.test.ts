@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as path from "node:path";
 import test from "node:test";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "../src/application/ports";
 import { SessionManager } from "../src/application/session-manager";
@@ -94,6 +95,28 @@ test("manual reconnect restarts the gateway and restores persisted threads", asy
 
   assert.equal(gateway.starts, 2);
   assert.equal(gateway.resumes, 2);
+});
+
+test("removing sessions by root path preserves sessions outside and in similar sibling paths", async () => {
+  const repository = new MemoryRepository();
+  const root = path.join(path.parse(process.cwd()).root, "work", "agent-hub");
+  const child = path.join(root, "app");
+  const sibling = path.join(path.dirname(root), "agent-hub-other");
+  const outside = path.join(path.parse(process.cwd()).root, "other", "project");
+  repository.value = [
+    { ...persistedSession("root", "Root", 1), cwd: root },
+    { ...persistedSession("child", "Child", 2), cwd: child },
+    { ...persistedSession("sibling", "Sibling", 3), cwd: sibling },
+    { ...persistedSession("outside", "Outside", 4), cwd: outside },
+  ];
+  const manager = new SessionManager(new FakeGateway(), repository);
+  await manager.initialize();
+
+  const removed = await manager.removeByRootPath(root);
+
+  assert.equal(removed, 2);
+  assert.deepEqual(manager.list().map((session) => session.id), ["sibling", "outside"]);
+  assert.deepEqual(repository.value.map((session) => session.id), ["sibling", "outside"]);
 });
 
 test("restoring sessions preserves terminal states and interrupts active work", async () => {

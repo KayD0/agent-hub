@@ -191,7 +191,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       folderAnalysisPanel.show(group, session.id, scope, depth.value, kind.value, competitiveFocus);
     }
   };
-  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, analyzeGroup, showError);
+  const removeRepository = async (repositoryId: string): Promise<void> => {
+    const repository = repositoryManager.get(repositoryId);
+    if (!repository) return;
+    await manager!.removeByRootPath(repository.rootPath);
+    await repositoryManager.remove(repositoryId);
+    await repositoriesView.refresh();
+  };
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, analyzeGroup, removeRepository, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
@@ -228,7 +235,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.openRepositoryIssues", (repositoryId?: string) => repositoryId ? githubIssuesPanel.show(repositoryId) : repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.refreshRepositories", () => repositoriesView.refresh()),
-    vscode.commands.registerCommand("agentHub.removeRepository", async (repositoryId: string) => { await repositoryManager.remove(repositoryId); await repositoriesView.refresh(); }),
+    vscode.commands.registerCommand("agentHub.removeRepository", removeRepository),
     vscode.commands.registerCommand("agentHub.openSetup", () => showSetup(context, authentication, output)),
     vscode.commands.registerCommand("agentHub.openCodexRules", () => openCodexRules().catch(showError)),
     vscode.commands.registerCommand("agentHub.redetectEnvironment", () => showSetup(context, authentication, output)),
