@@ -77,6 +77,9 @@ test("merge queue selects only safe candidates and posts their ids", async (cont
   const safe = dom.window.document.querySelector<HTMLInputElement>('[data-merge-candidate="safe"]')!;
   const dirty = dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.closest("article")!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
   assert.equal(safe.disabled, false); assert.equal(dirty.disabled, false);
+  assert.equal(safe.closest("article")?.parentElement?.id, "merge-candidates");
+  assert.equal(dom.window.document.querySelector('[data-cleanup-candidate="merged"]')?.closest("article")?.parentElement?.id, "merged-worktrees");
+  assert.equal(dom.window.document.querySelector("#worktree-tab")?.textContent, "ワークツリー");
   safe.click();
   const runMerge = dom.window.document.querySelector<HTMLButtonElement>("#run-merge")!;
   runMerge.click();
@@ -115,4 +118,10 @@ test("merge queue selects only safe candidates and posts their ids", async (cont
   assert.equal(dom.window.document.querySelector<HTMLButtonElement>("#run-commit")!.textContent, "選択分をコミット");
   assert.equal(dom.window.document.querySelector<HTMLButtonElement>("#run-merge")!.textContent, "選択分をマージ");
   assert.equal(dom.window.document.querySelector<HTMLButtonElement>("#remove-worktrees")!.textContent, "選択分を削除");
+
+  dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueue", candidates: [
+    { id: "safe", branch: "issue/39", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-39", mergeStatus: "merged", dirty: false, inUse: false },
+  ] } }));
+  assert.equal(dom.window.document.querySelector('[data-cleanup-candidate="safe"]')?.closest("article")?.parentElement?.id, "merged-worktrees");
+  assert.equal(dom.window.document.querySelector("#merge-candidates .empty")?.textContent, "マージ前のworktreeはありません。");
 });
