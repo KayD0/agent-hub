@@ -1,6 +1,10 @@
+import * as path from "node:path";
 import * as vscode from "vscode";
+import { RepositoryManager } from "../application/repository-manager";
+import { isWorktreeRepository } from "../application/repository-visibility";
 import { SessionChange, SessionManager } from "../application/session-manager";
 import { ManagedSession, SessionActivity } from "../domain/session";
+import { WorktreeMergeManager } from "../infrastructure/git/worktree-merge-manager";
 import { renderMarkdown } from "./markdown-renderer";
 
 const UPDATE_DELAY_MS = 80;
@@ -21,12 +25,25 @@ interface DetailRenderCache {
   nextKey: number;
 }
 
+interface MergeCandidate {
+  id: string;
+  name: string;
+  rootPath: string;
+  branch: string;
+  baseBranch: string;
+  mergeStatus: "base" | "merged" | "unmerged" | "unknown";
+  dirty: boolean;
+}
+
 export class SessionDetailPanel implements vscode.Disposable {
   private readonly panels = new Map<string, PanelState>();
+  private readonly mergingSessions = new Set<string>();
   private readonly subscription: { dispose(): void };
 
   public constructor(
     private readonly manager: SessionManager,
+    private readonly repositories: RepositoryManager,
+    private readonly worktreeMerges: WorktreeMergeManager,
     private readonly extensionUri: vscode.Uri,
     private readonly onError: (error: unknown) => void,
   ) {
@@ -63,13 +80,60 @@ export class SessionDetailPanel implements vscode.Disposable {
 
   private async handleMessage(sessionId: string, state: PanelState, value: unknown): Promise<void> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
-    const message = value as { type?: unknown; text?: unknown; decision?: unknown };
-    if (message.type === "ready") { this.postUpdate(sessionId, state, true); return; }
+    const message = value as { type?: unknown; text?: unknown; decision?: unknown; candidateIds?: unknown };
+    if (message.type === "ready") { this.postUpdate(sessionId, state, true); await this.refreshMergeQueue(sessionId, state); return; }
     try {
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);
       else if (message.type === "approval" && isDecision(message.decision)) this.manager.resolveApproval(sessionId, message.decision);
+      else if (message.type === "refreshMergeQueue") await this.refreshMergeQueue(sessionId, state);
+      else if (message.type === "mergeQueue" && Array.isArray(message.candidateIds)) {
+        if (this.mergingSessions.has(sessionId)) throw new Error("このセッションのマージキューは処理中です。");
+        this.mergingSessions.add(sessionId);
+        try {
+        const ids = [...new Set(message.candidateIds.filter((id): id is string => typeof id === "string"))];
+        const candidates = await this.mergeCandidates(sessionId);
+        const selected = ids.map((id) => candidates.find((candidate) => candidate.id === id)).filter((candidate): candidate is MergeCandidate => Boolean(candidate));
+        if (!selected.length || selected.length !== ids.length) throw new Error("マージ対象を再確認できませんでした。");
+        const details = selected.map((candidate, index) => `${index + 1}. ${candidate.branch} → ${candidate.baseBranch}`).join("\n");
+        const answer = await vscode.window.showWarningMessage(`次のブランチを表示順でマージします。pushとworktree削除は行いません。\n\n${details}`, { modal: true }, "順番にマージ");
+        if (answer !== "順番にマージ") return;
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "マージキューを処理しています" }, async (progress) => {
+          for (const candidate of selected) {
+            progress.report({ message: candidate.branch });
+            await this.worktreeMerges.merge(candidate.rootPath, candidate.branch, candidate.baseBranch);
+          }
+        });
+        void vscode.window.showInformationMessage(`${selected.length}件のブランチをマージしました。`);
+        await this.refreshMergeQueue(sessionId, state);
+        } finally {
+          this.mergingSessions.delete(sessionId);
+          void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
+        }
+      }
     } catch (error) { this.onError(error); }
+  }
+
+  private async refreshMergeQueue(sessionId: string, state: PanelState): Promise<void> {
+    const candidates = await this.mergeCandidates(sessionId);
+    void state.panel.webview.postMessage({ type: "mergeQueue", candidates });
+  }
+
+  private async mergeCandidates(sessionId: string): Promise<MergeCandidate[]> {
+    const session = this.manager.get(sessionId);
+    if (!session) return [];
+    const group = this.repositories.list().filter((candidate) => isInside(session.cwd, candidate.rootPath)).sort((left, right) => right.rootPath.length - left.rootPath.length)[0];
+    if (!group) return [];
+    const snapshot = await this.repositories.groupSnapshot(group);
+    return snapshot.repositories.filter((repository) => isWorktreeRepository(group.rootPath, repository.rootPath) && repository.branch).map((repository) => ({
+      id: repository.id,
+      name: repository.name,
+      rootPath: repository.rootPath,
+      branch: repository.branch!,
+      baseBranch: repository.baseBranch ?? "develop",
+      mergeStatus: repository.mergeStatus,
+      dirty: repository.files.length > 0,
+    }));
   }
 
   private refreshChanged(change: SessionChange): void {
@@ -148,3 +212,4 @@ function auditDecisionLabel(decision: "auto_approved" | "accepted" | "accepted_f
 function isDecision(value: unknown): value is "accept" | "acceptForSession" | "decline" { return value === "accept" || value === "acceptForSession" || value === "decline"; }
 function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!); }
 function randomNonce(): string { const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"; return Array.from({ length: 32 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join(""); }
+function isInside(candidate: string, root: string): boolean { const relative = path.relative(path.resolve(root), path.resolve(candidate)); return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)); }

@@ -7,6 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { GitRepositoryReader, parseCommitFiles, parseGitHistory, parseNumstat, parsePorcelainStatus } from "../src/infrastructure/git/git-repository-reader";
 import { IssueWorktreeManager } from "../src/infrastructure/git/issue-worktree-manager";
+import { WorktreeMergeManager, parseWorktreeList } from "../src/infrastructure/git/worktree-merge-manager";
 
 const execFileAsync = promisify(execFile);
 
@@ -144,4 +145,58 @@ test("does not reuse an unrelated directory as an issue worktree", async () => {
   } finally {
     await fs.rm(groupRoot, { recursive: true, force: true });
   }
+});
+
+test("merges a clean issue worktree into develop with a merge commit", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-worktree-merge-"));
+  const worktree = path.join(root, ".worktrees", "issue-39");
+  try {
+    await execFileAsync("git", ["init", "-b", "develop"], { cwd: root });
+    await execFileAsync("git", ["config", "user.email", "agenthub@example.test"], { cwd: root });
+    await execFileAsync("git", ["config", "user.name", "AgentHub Test"], { cwd: root });
+    await fs.writeFile(path.join(root, "README.md"), "initial\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root });
+    await fs.mkdir(path.dirname(worktree), { recursive: true });
+    await execFileAsync("git", ["worktree", "add", "-b", "issue/39-merge-queue", worktree, "develop"], { cwd: root });
+    await fs.writeFile(path.join(worktree, "feature.txt"), "feature\n");
+    await execFileAsync("git", ["add", "feature.txt"], { cwd: worktree });
+    await execFileAsync("git", ["commit", "-m", "feature"], { cwd: worktree });
+
+    const result = await new WorktreeMergeManager().merge(worktree, "issue/39-merge-queue");
+
+    assert.equal(path.resolve(result.targetPath), path.resolve(root));
+    assert.equal(result.alreadyMerged, false);
+    assert.equal((await fs.readFile(path.join(root, "feature.txt"), "utf8")).replace(/\r\n/g, "\n"), "feature\n");
+    const { stdout } = await execFileAsync("git", ["rev-list", "--parents", "-n", "1", "HEAD"], { cwd: root, encoding: "utf8" });
+    assert.equal(stdout.trim().split(/\s+/).length, 3);
+    assert.equal((await new WorktreeMergeManager().merge(worktree, "issue/39-merge-queue")).alreadyMerged, true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("worktree merge refuses an uncommitted source", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-worktree-merge-dirty-"));
+  const worktree = path.join(root, "issue");
+  try {
+    await execFileAsync("git", ["init", "-b", "develop"], { cwd: root });
+    await execFileAsync("git", ["config", "user.email", "agenthub@example.test"], { cwd: root });
+    await execFileAsync("git", ["config", "user.name", "AgentHub Test"], { cwd: root });
+    await fs.writeFile(path.join(root, "README.md"), "initial\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root });
+    await execFileAsync("git", ["worktree", "add", "-b", "issue/dirty", worktree, "develop"], { cwd: root });
+    await fs.writeFile(path.join(worktree, "dirty.txt"), "dirty\n");
+    await assert.rejects(() => new WorktreeMergeManager().merge(worktree, "issue/dirty"), /未コミット差分/);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("parses worktree porcelain branches", () => {
+  assert.deepEqual(parseWorktreeList("worktree C:/repo\nHEAD abc\nbranch refs/heads/develop\n\nworktree C:/repo/issue\nHEAD def\nbranch refs/heads/issue/39\n"), [
+    { path: "C:/repo", branch: "develop" },
+    { path: "C:/repo/issue", branch: "issue/39" },
+  ]);
 });

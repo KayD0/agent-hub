@@ -9,6 +9,7 @@ import { AutoApprovalPolicy } from "./domain/approval-policy";
 import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
 import { IssueWorktreeManager } from "./infrastructure/git/issue-worktree-manager";
+import { WorktreeMergeManager } from "./infrastructure/git/worktree-merge-manager";
 import { RepositoryFileReader } from "./infrastructure/filesystem/repository-file-reader";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
@@ -45,6 +46,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, new RepositoryFileReader(), showError);
   const githubIssueClient = new GitHubIssueClient();
   const issueWorktrees = new IssueWorktreeManager();
+  const worktreeMerges = new WorktreeMergeManager();
   const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, githubIssueClient, async (issue, groupId, targetMode) => {
     if (!authentication.isAuthenticated()) {
       const action = await vscode.window.showWarningMessage("Codexへのログインが必要です。", "ログイン");
@@ -139,7 +141,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate, analysisKind)));
     return urls;
   }, showError);
-  const detailPanel = new SessionDetailPanel(manager, context.extensionUri, showError);
+  const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), (sessionId) => folderAnalysisPanel.showSession(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {

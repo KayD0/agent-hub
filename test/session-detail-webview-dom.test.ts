@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
-interface PostedMessage { type: string; text?: string; decision?: string }
+interface PostedMessage { type: string; text?: string; decision?: string; candidateIds?: string[] }
 interface DetailItem { key: string; html: string }
 
 function detail(overrides: Record<string, unknown> = {}) {
@@ -64,4 +64,24 @@ test("detail send contract preserves IME composition", async (context) => {
   assert.equal(posted.length, 1);
   input.closest("form")!.dispatchEvent(new dom.window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "send", text: "日本語" }));
+});
+
+test("merge queue selects only safe candidates and posts their ids", async (context) => {
+  const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueue", candidates: [
+    { id: "safe", branch: "issue/39", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-39", mergeStatus: "unmerged", dirty: false },
+    { id: "dirty", branch: "issue/40", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-40", mergeStatus: "unmerged", dirty: true },
+  ] } }));
+  const safe = dom.window.document.querySelector<HTMLInputElement>('[data-merge-candidate="safe"]')!;
+  const dirty = dom.window.document.querySelector<HTMLInputElement>('[data-merge-candidate="dirty"]')!;
+  assert.equal(safe.disabled, false); assert.equal(dirty.disabled, true);
+  safe.click();
+  const runMerge = dom.window.document.querySelector<HTMLButtonElement>("#run-merge")!;
+  runMerge.click();
+  runMerge.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "mergeQueue", candidateIds: ["safe"] }));
+  assert.equal(posted.filter((message) => message.type === "mergeQueue").length, 1);
+  assert.equal(runMerge.disabled, true);
+  dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueueComplete" } }));
+  assert.equal(runMerge.disabled, false);
 });
