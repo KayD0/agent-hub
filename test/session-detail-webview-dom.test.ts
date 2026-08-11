@@ -72,10 +72,11 @@ test("merge queue selects only safe candidates and posts their ids", async (cont
     { id: "safe", branch: "issue/39", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-39", mergeStatus: "unmerged", dirty: false },
     { id: "dirty", branch: "issue/40", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-40", mergeStatus: "unmerged", dirty: true },
     { id: "merged", branch: "issue/38", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-38", mergeStatus: "merged", dirty: false, inUse: false },
+    { id: "conflict", branch: "issue/44", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-44", mergeStatus: "unmerged", dirty: false, conflict: true },
   ] } }));
   const safe = dom.window.document.querySelector<HTMLInputElement>('[data-merge-candidate="safe"]')!;
   const dirty = dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.closest("article")!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-  assert.equal(safe.disabled, false); assert.equal(dirty.disabled, true);
+  assert.equal(safe.disabled, false); assert.equal(dirty.disabled, false);
   safe.click();
   const runMerge = dom.window.document.querySelector<HTMLButtonElement>("#run-merge")!;
   runMerge.click();
@@ -94,9 +95,24 @@ test("merge queue selects only safe candidates and posts their ids", async (cont
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "openWorktreeChanges", candidateId: "dirty" }));
   dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.click();
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "commitWorktree", candidateId: "dirty" }));
-  assert.equal(dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.textContent, "未コミット差分コミット");
+  dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueueComplete" } }));
+  dirty.click();
+  dom.window.document.querySelector<HTMLButtonElement>("#run-commit")!.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "commitWorktrees", candidateIds: ["dirty"] }));
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.textContent, "コミット依頼");
   const dirtyRow = dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.closest("article")!;
   assert.equal(dirtyRow.querySelector(".merge-path")?.textContent, "C:\\…\\.worktrees\\issue-40");
-  assert.equal(dirtyRow.children.length, 2);
+  assert.equal(dirtyRow.children.length, 1);
+  assert.equal(dirtyRow.querySelector(".merge-summary")?.lastElementChild?.classList.contains("merge-actions"), true);
   assert.equal(dom.window.document.querySelector('[data-commit-worktree="merged"]'), null);
+  const conflict = dom.window.document.querySelector<HTMLButtonElement>('[data-resolve-conflict="conflict"]')!;
+  assert.equal(conflict.textContent, "競合解決を依頼");
+  assert.equal(conflict.closest("article")!.querySelector('[data-merge-candidate="conflict"]'), null);
+  dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueueComplete" } }));
+  conflict.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "resolveConflict", candidateId: "conflict" }));
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>("#refresh-merge")!.textContent, "更新");
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>("#run-commit")!.textContent, "選択分をコミット");
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>("#run-merge")!.textContent, "選択分をマージ");
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>("#remove-worktrees")!.textContent, "選択分を削除");
 });

@@ -14,6 +14,19 @@ export interface WorktreeMergeResult {
 interface WorktreeEntry { path: string; branch?: string }
 
 export class WorktreeMergeManager {
+  public async hasMergeConflict(sourcePath: string, expectedSourceBranch: string, targetBranch = "develop"): Promise<boolean> {
+    const sourceBranch = await this.assertBranch(sourcePath, expectedSourceBranch);
+    if (await this.isAncestor(sourcePath, sourceBranch, targetBranch)) return false;
+    try {
+      await execFileAsync("git", ["merge-tree", "--write-tree", targetBranch, sourceBranch], { cwd: sourcePath, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout: 60_000, windowsHide: true });
+      return false;
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === 1) return true;
+      const detail = error && typeof error === "object" && "stderr" in error && typeof error.stderr === "string" ? error.stderr.trim() : "";
+      throw new Error(detail || "競合状態を判定できませんでした。");
+    }
+  }
+
   public async remove(sourcePath: string, expectedSourceBranch: string, groupRootPath: string, targetBranch = "develop"): Promise<void> {
     const managedRoot = path.resolve(groupRootPath, ".worktrees");
     const relative = path.relative(managedRoot, path.resolve(sourcePath));

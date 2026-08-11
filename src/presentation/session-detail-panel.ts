@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { RepositoryManager } from "../application/repository-manager";
 import { isWorktreeRepository } from "../application/repository-visibility";
 import { SessionChange, SessionManager } from "../application/session-manager";
-import { findWorktreeSession, worktreeCommitInstruction } from "../application/worktree-session";
+import { conflictResolutionInstruction, worktreeCommitInstruction } from "../application/worktree-session";
 import { ManagedSession, SessionActivity } from "../domain/session";
 import { WorktreeMergeManager } from "../infrastructure/git/worktree-merge-manager";
 import { renderMarkdown } from "./markdown-renderer";
@@ -35,6 +35,7 @@ interface MergeCandidate {
   mergeStatus: "base" | "merged" | "unmerged" | "unknown";
   dirty: boolean;
   inUse: boolean;
+  conflict?: boolean;
 }
 
 export class SessionDetailPanel implements vscode.Disposable {
@@ -97,14 +98,17 @@ export class SessionDetailPanel implements vscode.Disposable {
         await this.openRepositoryChanges(group.id, candidate.id);
       }
       else if (message.type === "commitWorktree" && typeof message.candidateId === "string") {
+        await this.requestWorktreeCommits(sessionId, state, [message.candidateId]);
+      }
+      else if (message.type === "commitWorktrees" && Array.isArray(message.candidateIds)) {
+        await this.requestWorktreeCommits(sessionId, state, message.candidateIds);
+      }
+      else if (message.type === "resolveConflict" && typeof message.candidateId === "string") {
         const candidate = (await this.mergeCandidates(sessionId)).find((item) => item.id === message.candidateId);
-        if (!candidate || !candidate.dirty) throw new Error("コミット対象を再確認できませんでした。");
-        const target = findWorktreeSession(this.manager.list(), candidate.rootPath, sessionId);
-        if (!target) throw new Error("このworktreeに関連するセッションが見つかりません。対象セッションを開いてから実行してください。");
-        await this.manager.sendMessage(target.id, worktreeCommitInstruction(candidate.rootPath, candidate.branch));
-        this.show(target.id);
+        if (!candidate || candidate.conflict !== true) throw new Error("競合対象を再確認できませんでした。");
+        await this.manager.sendMessage(sessionId, conflictResolutionInstruction(candidate, candidate.baseBranch));
         void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
-        void vscode.window.showInformationMessage(`${target.title}へコミット作業を依頼しました。`);
+        void vscode.window.showInformationMessage(`${candidate.branch}の競合解決を現在のセッションへ依頼しました。`);
       }
       else if (message.type === "removeWorktrees" && Array.isArray(message.candidateIds)) {
         if (this.mergingSessions.has(sessionId)) throw new Error("このセッションのworktree操作は処理中です。");
@@ -159,21 +163,39 @@ export class SessionDetailPanel implements vscode.Disposable {
     void state.panel.webview.postMessage({ type: "mergeQueue", candidates });
   }
 
+  private async requestWorktreeCommits(sessionId: string, state: PanelState, values: unknown[]): Promise<void> {
+    const ids = [...new Set(values.filter((id): id is string => typeof id === "string"))];
+    const candidates = await this.mergeCandidates(sessionId);
+    const selected = ids.map((id) => candidates.find((candidate) => candidate.id === id)).filter((candidate): candidate is MergeCandidate => Boolean(candidate));
+    if (!selected.length || selected.length !== ids.length || selected.some((candidate) => !candidate.dirty)) throw new Error("未コミット差分の対象を再確認できませんでした。");
+    await this.manager.sendMessage(sessionId, worktreeCommitInstruction(selected));
+    void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
+    void vscode.window.showInformationMessage(`${selected.length}件のコミット作業を現在のセッションへ依頼しました。`);
+  }
+
   private async mergeCandidates(sessionId: string): Promise<MergeCandidate[]> {
     const session = this.manager.get(sessionId);
     if (!session) return [];
     const group = this.groupForSession(sessionId);
     if (!group) return [];
     const snapshot = await this.repositories.groupSnapshot(group);
-    return snapshot.repositories.filter((repository) => isWorktreeRepository(group.rootPath, repository.rootPath) && repository.branch).map((repository) => ({
-      id: repository.id,
-      name: repository.name,
-      rootPath: repository.rootPath,
-      branch: repository.branch!,
-      baseBranch: repository.baseBranch ?? "develop",
-      mergeStatus: repository.mergeStatus,
-      dirty: repository.files.length > 0,
-      inUse: this.manager.list().some((candidate) => isActive(candidate.status) && samePath(candidate.cwd, repository.rootPath)),
+    return Promise.all(snapshot.repositories.filter((repository) => isWorktreeRepository(group.rootPath, repository.rootPath) && repository.branch).map(async (repository) => {
+      const baseBranch = repository.baseBranch ?? "develop";
+      const dirty = repository.files.length > 0;
+      const conflict = !dirty && repository.mergeStatus === "unmerged"
+        ? await this.worktreeMerges.hasMergeConflict(repository.rootPath, repository.branch!, baseBranch).catch(() => undefined)
+        : false;
+      return {
+        id: repository.id,
+        name: repository.name,
+        rootPath: repository.rootPath,
+        branch: repository.branch!,
+        baseBranch,
+        mergeStatus: repository.mergeStatus,
+        dirty,
+        inUse: this.manager.list().some((candidate) => isActive(candidate.status) && samePath(candidate.cwd, repository.rootPath)),
+        conflict,
+      };
     }));
   }
 

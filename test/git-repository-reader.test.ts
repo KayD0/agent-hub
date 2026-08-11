@@ -163,7 +163,9 @@ test("merges a clean issue worktree into develop with a merge commit", async () 
     await execFileAsync("git", ["add", "feature.txt"], { cwd: worktree });
     await execFileAsync("git", ["commit", "-m", "feature"], { cwd: worktree });
 
-    const result = await new WorktreeMergeManager().merge(worktree, "issue/39-merge-queue");
+    const manager = new WorktreeMergeManager();
+    assert.equal(await manager.hasMergeConflict(worktree, "issue/39-merge-queue"), false);
+    const result = await manager.merge(worktree, "issue/39-merge-queue");
 
     assert.equal(path.resolve(result.targetPath), path.resolve(root));
     assert.equal(result.alreadyMerged, false);
@@ -171,6 +173,32 @@ test("merges a clean issue worktree into develop with a merge commit", async () 
     const { stdout } = await execFileAsync("git", ["rev-list", "--parents", "-n", "1", "HEAD"], { cwd: root, encoding: "utf8" });
     assert.equal(stdout.trim().split(/\s+/).length, 3);
     assert.equal((await new WorktreeMergeManager().merge(worktree, "issue/39-merge-queue")).alreadyMerged, true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("detects a merge conflict without changing either worktree", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-worktree-conflict-"));
+  const worktree = path.join(root, ".worktrees", "issue-44");
+  try {
+    await execFileAsync("git", ["init", "-b", "develop"], { cwd: root });
+    await execFileAsync("git", ["config", "user.email", "agenthub@example.test"], { cwd: root });
+    await execFileAsync("git", ["config", "user.name", "AgentHub Test"], { cwd: root });
+    await fs.writeFile(path.join(root, "shared.txt"), "base\n");
+    await execFileAsync("git", ["add", "shared.txt"], { cwd: root });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root });
+    await fs.mkdir(path.dirname(worktree), { recursive: true });
+    await execFileAsync("git", ["worktree", "add", "-b", "issue/44-conflict", worktree, "develop"], { cwd: root });
+    await fs.writeFile(path.join(worktree, "shared.txt"), "issue\n");
+    await execFileAsync("git", ["commit", "-am", "issue change"], { cwd: worktree });
+    await fs.writeFile(path.join(root, "shared.txt"), "develop\n");
+    await execFileAsync("git", ["commit", "-am", "develop change"], { cwd: root });
+
+    assert.equal(await new WorktreeMergeManager().hasMergeConflict(worktree, "issue/44-conflict"), true);
+    const rootStatus = (await execFileAsync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" })).stdout.split(/\r?\n/).filter((line) => line && !line.endsWith(".worktrees/"));
+    assert.deepEqual(rootStatus, []);
+    assert.equal((await execFileAsync("git", ["status", "--porcelain"], { cwd: worktree, encoding: "utf8" })).stdout, "");
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
