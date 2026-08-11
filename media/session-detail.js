@@ -8,7 +8,7 @@
   tablist.append(mergeTab);
   const mergePanel = document.createElement("section");
   mergePanel.className = "tabpanel"; mergePanel.id = "merge-panel"; mergePanel.setAttribute("role", "tabpanel"); mergePanel.hidden = true;
-  mergePanel.innerHTML = '<div class="actions"><button type="button" id="refresh-merge">状態を更新</button><button type="button" id="run-merge" disabled>選択項目を順番にマージ</button></div><div id="merge-candidates"><p class="empty">関連するIssue用worktreeはありません。</p></div>';
+  mergePanel.innerHTML = '<div class="actions"><button type="button" id="refresh-merge">状態を更新</button><button type="button" id="run-merge" disabled>選択項目を順番にマージ</button><button type="button" id="remove-worktrees" disabled>マージ済みを削除</button></div><div id="merge-candidates"><p class="empty">関連するIssue用worktreeはありません。</p></div>';
   document.querySelector("#audit-panel").after(mergePanel);
   const auditBody = document.querySelector("#audit-panel tbody");
   const activityNodes = new Map();
@@ -49,18 +49,24 @@
     for (const candidate of candidates) {
       const row = document.createElement("article");
       const label = document.createElement("label");
-      const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.dataset.mergeCandidate = candidate.id;
-      const selectable = !candidate.dirty && candidate.mergeStatus === "unmerged" && candidate.baseBranch === "develop";
-      checkbox.disabled = !selectable; checkbox.addEventListener("change", updateMergeAction);
+      const checkbox = document.createElement("input"); checkbox.type = "checkbox";
+      const mergeable = !candidate.dirty && candidate.mergeStatus === "unmerged" && candidate.baseBranch === "develop";
+      const removable = !candidate.dirty && !candidate.inUse && candidate.mergeStatus === "merged" && candidate.baseBranch === "develop";
+      if (mergeable) checkbox.dataset.mergeCandidate = candidate.id;
+      else if (removable) checkbox.dataset.cleanupCandidate = candidate.id;
+      checkbox.disabled = !mergeable && !removable; checkbox.addEventListener("change", updateMergeAction);
       const title = document.createElement("strong"); title.textContent = candidate.branch + " → " + candidate.baseBranch;
       const detail = document.createElement("p"); detail.className = "meta"; detail.textContent = candidate.rootPath;
-      const state = document.createElement("p"); state.className = "meta"; state.textContent = candidate.dirty ? "未コミット差分あり" : candidate.mergeStatus === "merged" ? "マージ済み" : candidate.mergeStatus === "unmerged" ? "未マージ" : "判定不能";
-      label.append(checkbox, title); row.append(label, detail, state); container.append(row);
+      const state = document.createElement("p"); state.className = "meta"; state.textContent = candidate.dirty ? "未コミット差分あり" : candidate.inUse ? "セッションで使用中" : candidate.mergeStatus === "merged" ? "マージ済み" : candidate.mergeStatus === "unmerged" ? "未マージ" : "判定不能";
+      const actions = document.createElement("div"); actions.className = "actions";
+      const changes = document.createElement("button"); changes.type = "button"; changes.textContent = "差分を見る"; changes.dataset.openChanges = candidate.id;
+      const commit = document.createElement("button"); commit.type = "button"; commit.textContent = "コミット"; commit.dataset.commitWorktree = candidate.id; commit.disabled = !candidate.dirty;
+      actions.append(changes, commit); label.append(checkbox, title); row.append(label, detail, state, actions); container.append(row);
     }
     updateMergeAction();
   }
 
-  function updateMergeAction() { byId("run-merge").disabled = mergeRunning || !document.querySelector("[data-merge-candidate]:checked"); }
+  function updateMergeAction() { byId("run-merge").disabled = mergeRunning || !document.querySelector("[data-merge-candidate]:checked"); byId("remove-worktrees").disabled = mergeRunning || !document.querySelector("[data-cleanup-candidate]:checked"); }
 
   const tabs = [...document.querySelectorAll('[role="tab"]')];
   function activateTab(name, focus = false) {
@@ -80,6 +86,17 @@
     if (mergeRunning) return;
     const candidateIds = [...document.querySelectorAll("[data-merge-candidate]:checked")].map((checkbox) => checkbox.dataset.mergeCandidate);
     if (candidateIds.length) { mergeRunning = true; updateMergeAction(); vscode.postMessage({ type: "mergeQueue", candidateIds }); }
+  });
+  byId("remove-worktrees").addEventListener("click", () => {
+    if (mergeRunning) return;
+    const candidateIds = [...document.querySelectorAll("[data-cleanup-candidate]:checked")].map((checkbox) => checkbox.dataset.cleanupCandidate);
+    if (candidateIds.length) { mergeRunning = true; updateMergeAction(); vscode.postMessage({ type: "removeWorktrees", candidateIds }); }
+  });
+  byId("merge-candidates").addEventListener("click", (event) => {
+    const changes = event.target.closest?.("[data-open-changes]");
+    if (changes) vscode.postMessage({ type: "openWorktreeChanges", candidateId: changes.dataset.openChanges });
+    const commit = event.target.closest?.("[data-commit-worktree]");
+    if (commit && !mergeRunning) { mergeRunning = true; updateMergeAction(); vscode.postMessage({ type: "commitWorktree", candidateId: commit.dataset.commitWorktree }); }
   });
   byId("attention").addEventListener("click", (event) => { const button = event.target.closest?.("[data-decision]"); if (button) vscode.postMessage({ type: "approval", decision: button.dataset.decision }); });
   window.addEventListener("message", (event) => { if (event.data?.type === "sessionDetail") update(event.data.session); else if (event.data?.type === "mergeQueue") updateMergeQueue(event.data.candidates || []); else if (event.data?.type === "mergeQueueComplete") { mergeRunning = false; updateMergeAction(); } });

@@ -33,6 +33,7 @@ interface MergeCandidate {
   baseBranch: string;
   mergeStatus: "base" | "merged" | "unmerged" | "unknown";
   dirty: boolean;
+  inUse: boolean;
 }
 
 export class SessionDetailPanel implements vscode.Disposable {
@@ -44,6 +45,7 @@ export class SessionDetailPanel implements vscode.Disposable {
     private readonly manager: SessionManager,
     private readonly repositories: RepositoryManager,
     private readonly worktreeMerges: WorktreeMergeManager,
+    private readonly openRepositoryChanges: (groupId: string, repositoryId: string) => Promise<void>,
     private readonly extensionUri: vscode.Uri,
     private readonly onError: (error: unknown) => void,
   ) {
@@ -80,13 +82,56 @@ export class SessionDetailPanel implements vscode.Disposable {
 
   private async handleMessage(sessionId: string, state: PanelState, value: unknown): Promise<void> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
-    const message = value as { type?: unknown; text?: unknown; decision?: unknown; candidateIds?: unknown };
+    const message = value as { type?: unknown; text?: unknown; decision?: unknown; candidateId?: unknown; candidateIds?: unknown };
     if (message.type === "ready") { this.postUpdate(sessionId, state, true); await this.refreshMergeQueue(sessionId, state); return; }
     try {
       if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);
       else if (message.type === "approval" && isDecision(message.decision)) this.manager.resolveApproval(sessionId, message.decision);
       else if (message.type === "refreshMergeQueue") await this.refreshMergeQueue(sessionId, state);
+      else if (message.type === "openWorktreeChanges" && typeof message.candidateId === "string") {
+        const group = this.groupForSession(sessionId);
+        const candidate = (await this.mergeCandidates(sessionId)).find((item) => item.id === message.candidateId);
+        if (!group || !candidate) throw new Error("対象worktreeを再確認できませんでした。");
+        await this.openRepositoryChanges(group.id, candidate.id);
+      }
+      else if (message.type === "commitWorktree" && typeof message.candidateId === "string") {
+        if (this.mergingSessions.has(sessionId)) throw new Error("このセッションのworktree操作は処理中です。");
+        const candidate = (await this.mergeCandidates(sessionId)).find((item) => item.id === message.candidateId);
+        if (!candidate || !candidate.dirty) throw new Error("コミット対象を再確認できませんでした。");
+        const commitMessage = await vscode.window.showInputBox({ title: `${candidate.branch}をコミット`, prompt: "このworktreeの全変更をコミットします。", placeHolder: "コミットメッセージ", ignoreFocusOut: true });
+        if (commitMessage === undefined) { void state.panel.webview.postMessage({ type: "mergeQueueComplete" }); return; }
+        this.mergingSessions.add(sessionId);
+        try {
+          await this.worktreeMerges.commit(candidate.rootPath, candidate.branch, commitMessage);
+          void vscode.window.showInformationMessage(`${candidate.branch}をコミットしました。`);
+          await this.refreshMergeQueue(sessionId, state);
+        } finally {
+          this.mergingSessions.delete(sessionId);
+          void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
+        }
+      }
+      else if (message.type === "removeWorktrees" && Array.isArray(message.candidateIds)) {
+        if (this.mergingSessions.has(sessionId)) throw new Error("このセッションのworktree操作は処理中です。");
+        const group = this.groupForSession(sessionId);
+        if (!group) throw new Error("登録フォルダを再確認できませんでした。");
+        const ids = [...new Set(message.candidateIds.filter((id): id is string => typeof id === "string"))];
+        const candidates = await this.mergeCandidates(sessionId);
+        const selected = ids.map((id) => candidates.find((candidate) => candidate.id === id)).filter((candidate): candidate is MergeCandidate => Boolean(candidate));
+        if (!selected.length || selected.length !== ids.length || selected.some((candidate) => candidate.dirty || candidate.inUse || candidate.mergeStatus !== "merged")) throw new Error("削除対象の安全条件を再確認できませんでした。");
+        const details = selected.map((candidate, index) => `${index + 1}. ${candidate.branch}`).join("\n");
+        const answer = await vscode.window.showWarningMessage(`次のマージ済みworktreeを削除します。ブランチは削除しません。\n\n${details}`, { modal: true }, "worktreeを削除");
+        if (answer !== "worktreeを削除") { void state.panel.webview.postMessage({ type: "mergeQueueComplete" }); return; }
+        this.mergingSessions.add(sessionId);
+        try {
+          for (const candidate of selected) await this.worktreeMerges.remove(candidate.rootPath, candidate.branch, group.rootPath, candidate.baseBranch);
+          void vscode.window.showInformationMessage(`${selected.length}件のworktreeを削除しました。`);
+          await this.refreshMergeQueue(sessionId, state);
+        } finally {
+          this.mergingSessions.delete(sessionId);
+          void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
+        }
+      }
       else if (message.type === "mergeQueue" && Array.isArray(message.candidateIds)) {
         if (this.mergingSessions.has(sessionId)) throw new Error("このセッションのマージキューは処理中です。");
         this.mergingSessions.add(sessionId);
@@ -111,7 +156,7 @@ export class SessionDetailPanel implements vscode.Disposable {
           void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
         }
       }
-    } catch (error) { this.onError(error); }
+    } catch (error) { void state.panel.webview.postMessage({ type: "mergeQueueComplete" }); this.onError(error); }
   }
 
   private async refreshMergeQueue(sessionId: string, state: PanelState): Promise<void> {
@@ -122,7 +167,7 @@ export class SessionDetailPanel implements vscode.Disposable {
   private async mergeCandidates(sessionId: string): Promise<MergeCandidate[]> {
     const session = this.manager.get(sessionId);
     if (!session) return [];
-    const group = this.repositories.list().filter((candidate) => isInside(session.cwd, candidate.rootPath)).sort((left, right) => right.rootPath.length - left.rootPath.length)[0];
+    const group = this.groupForSession(sessionId);
     if (!group) return [];
     const snapshot = await this.repositories.groupSnapshot(group);
     return snapshot.repositories.filter((repository) => isWorktreeRepository(group.rootPath, repository.rootPath) && repository.branch).map((repository) => ({
@@ -133,7 +178,14 @@ export class SessionDetailPanel implements vscode.Disposable {
       baseBranch: repository.baseBranch ?? "develop",
       mergeStatus: repository.mergeStatus,
       dirty: repository.files.length > 0,
+      inUse: this.manager.list().some((candidate) => isActive(candidate.status) && samePath(candidate.cwd, repository.rootPath)),
     }));
+  }
+
+  private groupForSession(sessionId: string) {
+    const session = this.manager.get(sessionId);
+    if (!session) return undefined;
+    return this.repositories.list().filter((candidate) => isInside(session.cwd, candidate.rootPath)).sort((left, right) => right.rootPath.length - left.rootPath.length)[0];
   }
 
   private refreshChanged(change: SessionChange): void {
@@ -213,3 +265,5 @@ function isDecision(value: unknown): value is "accept" | "acceptForSession" | "d
 function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!); }
 function randomNonce(): string { const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"; return Array.from({ length: 32 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join(""); }
 function isInside(candidate: string, root: string): boolean { const relative = path.relative(path.resolve(root), path.resolve(candidate)); return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)); }
+function samePath(left: string, right: string): boolean { return path.resolve(left).toLocaleLowerCase() === path.resolve(right).toLocaleLowerCase(); }
+function isActive(status: ManagedSession["status"]): boolean { return ["starting", "running", "waiting_for_approval", "waiting_for_input"].includes(status); }

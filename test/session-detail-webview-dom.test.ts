@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
-interface PostedMessage { type: string; text?: string; decision?: string; candidateIds?: string[] }
+interface PostedMessage { type: string; text?: string; decision?: string; candidateId?: string; candidateIds?: string[] }
 interface DetailItem { key: string; html: string }
 
 function detail(overrides: Record<string, unknown> = {}) {
@@ -71,9 +71,10 @@ test("merge queue selects only safe candidates and posts their ids", async (cont
   dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueue", candidates: [
     { id: "safe", branch: "issue/39", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-39", mergeStatus: "unmerged", dirty: false },
     { id: "dirty", branch: "issue/40", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-40", mergeStatus: "unmerged", dirty: true },
+    { id: "merged", branch: "issue/38", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-38", mergeStatus: "merged", dirty: false, inUse: false },
   ] } }));
   const safe = dom.window.document.querySelector<HTMLInputElement>('[data-merge-candidate="safe"]')!;
-  const dirty = dom.window.document.querySelector<HTMLInputElement>('[data-merge-candidate="dirty"]')!;
+  const dirty = dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.closest("article")!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
   assert.equal(safe.disabled, false); assert.equal(dirty.disabled, true);
   safe.click();
   const runMerge = dom.window.document.querySelector<HTMLButtonElement>("#run-merge")!;
@@ -84,4 +85,13 @@ test("merge queue selects only safe candidates and posts their ids", async (cont
   assert.equal(runMerge.disabled, true);
   dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueueComplete" } }));
   assert.equal(runMerge.disabled, false);
+  const cleanup = dom.window.document.querySelector<HTMLInputElement>('[data-cleanup-candidate="merged"]')!;
+  cleanup.click();
+  dom.window.document.querySelector<HTMLButtonElement>("#remove-worktrees")!.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "removeWorktrees", candidateIds: ["merged"] }));
+  dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueueComplete" } }));
+  dom.window.document.querySelector<HTMLButtonElement>('[data-open-changes="dirty"]')!.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "openWorktreeChanges", candidateId: "dirty" }));
+  dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "commitWorktree", candidateId: "dirty" }));
 });

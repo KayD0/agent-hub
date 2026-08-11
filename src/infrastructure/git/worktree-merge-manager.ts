@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import * as path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -10,12 +11,37 @@ export interface WorktreeMergeResult {
   alreadyMerged: boolean;
 }
 
+export interface WorktreeCommitResult { branch: string; commit: string }
+
 interface WorktreeEntry { path: string; branch?: string }
 
 export class WorktreeMergeManager {
+  public async commit(sourcePath: string, expectedSourceBranch: string, message: string): Promise<WorktreeCommitResult> {
+    const normalizedMessage = message.trim();
+    if (!normalizedMessage) throw new Error("コミットメッセージを入力してください。");
+    await this.assertBranch(sourcePath, expectedSourceBranch);
+    if (!(await this.hasChanges(sourcePath))) throw new Error("コミットする変更がありません。");
+    await this.git(sourcePath, ["add", "-A"]);
+    await this.git(sourcePath, ["commit", "-m", normalizedMessage]);
+    return { branch: expectedSourceBranch, commit: (await this.git(sourcePath, ["rev-parse", "HEAD"])).trim() };
+  }
+
+  public async remove(sourcePath: string, expectedSourceBranch: string, groupRootPath: string, targetBranch = "develop"): Promise<void> {
+    const managedRoot = path.resolve(groupRootPath, ".worktrees");
+    const relative = path.relative(managedRoot, path.resolve(sourcePath));
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("管理対象外のworktreeは削除できません。");
+    await this.assertBranch(sourcePath, expectedSourceBranch);
+    await this.assertClean(sourcePath, "削除対象", false);
+    const worktrees = parseWorktreeList(await this.git(sourcePath, ["worktree", "list", "--porcelain"]));
+    const source = worktrees.find((entry) => samePath(entry.path, sourcePath) && entry.branch === expectedSourceBranch);
+    const target = worktrees.find((entry) => entry.branch === targetBranch);
+    if (!source || !target) throw new Error("worktreeと基準ブランチの関係を確認できませんでした。");
+    if (!(await this.isAncestor(sourcePath, expectedSourceBranch, targetBranch))) throw new Error(`${expectedSourceBranch}は${targetBranch}へマージされていません。`);
+    await this.git(target.path, ["worktree", "remove", sourcePath]);
+  }
+
   public async merge(sourcePath: string, expectedSourceBranch: string, targetBranch = "develop"): Promise<WorktreeMergeResult> {
-    const sourceBranch = (await this.git(sourcePath, ["branch", "--show-current"])).trim();
-    if (!sourceBranch || sourceBranch !== expectedSourceBranch) throw new Error(`worktreeのブランチが変更されています: ${sourceBranch || "detached HEAD"}`);
+    const sourceBranch = await this.assertBranch(sourcePath, expectedSourceBranch);
     if (sourceBranch === targetBranch) throw new Error("基準ブランチ自身はマージできません。");
     const worktrees = parseWorktreeList(await this.git(sourcePath, ["worktree", "list", "--porcelain"]));
     const target = worktrees.find((entry) => entry.branch === targetBranch);
@@ -35,6 +61,16 @@ export class WorktreeMergeManager {
       throw error;
     }
     return { sourceBranch, targetBranch, targetPath: target.path, alreadyMerged: false };
+  }
+
+  private async assertBranch(sourcePath: string, expectedSourceBranch: string): Promise<string> {
+    const sourceBranch = (await this.git(sourcePath, ["branch", "--show-current"])).trim();
+    if (!sourceBranch || sourceBranch !== expectedSourceBranch) throw new Error(`worktreeのブランチが変更されています: ${sourceBranch || "detached HEAD"}`);
+    return sourceBranch;
+  }
+
+  private async hasChanges(cwd: string): Promise<boolean> {
+    return (await this.git(cwd, ["status", "--porcelain", "-z"])).length > 0;
   }
 
   private async assertClean(cwd: string, label: string, ignoreManagedWorktrees: boolean): Promise<void> {
@@ -62,6 +98,8 @@ export class WorktreeMergeManager {
     }
   }
 }
+
+function samePath(left: string, right: string): boolean { return path.resolve(left).toLocaleLowerCase() === path.resolve(right).toLocaleLowerCase(); }
 
 export function parseWorktreeList(value: string): WorktreeEntry[] {
   return value.trim().split(/\r?\n\r?\n/).filter(Boolean).flatMap((block) => {

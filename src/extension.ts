@@ -141,7 +141,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate, analysisKind)));
     return urls;
   }, showError);
-  const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, context.extensionUri, showError);
+  const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), (sessionId) => folderAnalysisPanel.showSession(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {

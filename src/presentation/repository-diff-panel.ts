@@ -37,6 +37,17 @@ export class RepositoryDiffPanel implements vscode.Disposable {
     await this.render(repositoryId, panel);
   }
 
+  public async showRepository(repositoryId: string, childRepositoryId: string): Promise<void> {
+    const repository = this.manager.get(repositoryId);
+    if (!repository) throw new Error("登録済みリポジトリが見つかりません。");
+    const snapshot = await this.manager.groupSnapshot(repository);
+    const child = snapshot.repositories.find((candidate) => candidate.id === childRepositoryId);
+    if (!child) throw new Error("対象worktreeが見つかりません。");
+    const first = child.files[0];
+    if (first) this.selectedPaths.set(repositoryId, `${child.id}::${first.path}`);
+    await this.show(repositoryId);
+  }
+
   public dispose(): void {
     for (const panel of this.panels.values()) panel.dispose();
     this.panels.clear();
