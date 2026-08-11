@@ -201,31 +201,6 @@ test("parses worktree porcelain branches", () => {
   ]);
 });
 
-test("commits all changes only in the selected worktree", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-worktree-commit-"));
-  const worktree = path.join(root, ".worktrees", "issue-41");
-  try {
-    await execFileAsync("git", ["init", "-b", "develop"], { cwd: root });
-    await execFileAsync("git", ["config", "user.email", "agenthub@example.test"], { cwd: root });
-    await execFileAsync("git", ["config", "user.name", "AgentHub Test"], { cwd: root });
-    await fs.writeFile(path.join(root, "README.md"), "initial\n");
-    await execFileAsync("git", ["add", "README.md"], { cwd: root });
-    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root });
-    await fs.mkdir(path.dirname(worktree), { recursive: true });
-    await execFileAsync("git", ["worktree", "add", "-b", "issue/41-commit", worktree, "develop"], { cwd: root });
-    await fs.writeFile(path.join(worktree, "change.txt"), "change\n");
-
-    const result = await new WorktreeMergeManager().commit(worktree, "issue/41-commit", "feat: worktree change");
-
-    assert.match(result.commit, /^[0-9a-f]{40}$/);
-    assert.equal((await execFileAsync("git", ["status", "--porcelain"], { cwd: worktree, encoding: "utf8" })).stdout, "");
-    assert.equal((await execFileAsync("git", ["log", "-1", "--pretty=%s"], { cwd: worktree, encoding: "utf8" })).stdout.trim(), "feat: worktree change");
-    assert.equal((await execFileAsync("git", ["log", "-1", "--pretty=%s"], { cwd: root, encoding: "utf8" })).stdout.trim(), "initial");
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
-
 test("removes only clean worktrees already merged into develop", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-worktree-remove-"));
   const worktree = path.join(root, ".worktrees", "issue-40");

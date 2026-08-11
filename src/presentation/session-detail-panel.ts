@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { RepositoryManager } from "../application/repository-manager";
 import { isWorktreeRepository } from "../application/repository-visibility";
 import { SessionChange, SessionManager } from "../application/session-manager";
+import { findWorktreeSession, worktreeCommitInstruction } from "../application/worktree-session";
 import { ManagedSession, SessionActivity } from "../domain/session";
 import { WorktreeMergeManager } from "../infrastructure/git/worktree-merge-manager";
 import { renderMarkdown } from "./markdown-renderer";
@@ -96,20 +97,14 @@ export class SessionDetailPanel implements vscode.Disposable {
         await this.openRepositoryChanges(group.id, candidate.id);
       }
       else if (message.type === "commitWorktree" && typeof message.candidateId === "string") {
-        if (this.mergingSessions.has(sessionId)) throw new Error("このセッションのworktree操作は処理中です。");
         const candidate = (await this.mergeCandidates(sessionId)).find((item) => item.id === message.candidateId);
         if (!candidate || !candidate.dirty) throw new Error("コミット対象を再確認できませんでした。");
-        const commitMessage = await vscode.window.showInputBox({ title: `${candidate.branch}をコミット`, prompt: "このworktreeの全変更をコミットします。", placeHolder: "コミットメッセージ", ignoreFocusOut: true });
-        if (commitMessage === undefined) { void state.panel.webview.postMessage({ type: "mergeQueueComplete" }); return; }
-        this.mergingSessions.add(sessionId);
-        try {
-          await this.worktreeMerges.commit(candidate.rootPath, candidate.branch, commitMessage);
-          void vscode.window.showInformationMessage(`${candidate.branch}をコミットしました。`);
-          await this.refreshMergeQueue(sessionId, state);
-        } finally {
-          this.mergingSessions.delete(sessionId);
-          void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
-        }
+        const target = findWorktreeSession(this.manager.list(), candidate.rootPath, sessionId);
+        if (!target) throw new Error("このworktreeに関連するセッションが見つかりません。対象セッションを開いてから実行してください。");
+        await this.manager.sendMessage(target.id, worktreeCommitInstruction(candidate.rootPath, candidate.branch));
+        this.show(target.id);
+        void state.panel.webview.postMessage({ type: "mergeQueueComplete" });
+        void vscode.window.showInformationMessage(`${target.title}へコミット作業を依頼しました。`);
       }
       else if (message.type === "removeWorktrees" && Array.isArray(message.candidateIds)) {
         if (this.mergingSessions.has(sessionId)) throw new Error("このセッションのworktree操作は処理中です。");

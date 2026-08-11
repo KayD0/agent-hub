@@ -3,6 +3,7 @@ import * as path from "node:path";
 import test from "node:test";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "../src/application/ports";
 import { SessionManager } from "../src/application/session-manager";
+import { findWorktreeSession, worktreeCommitInstruction } from "../src/application/worktree-session";
 import { PersistedSession, SessionStatus, attentionForStatus, isAttentionLevel, isSessionStatus } from "../src/domain/session";
 
 class MemoryRepository implements SessionRepository {
@@ -736,4 +737,20 @@ test("session creation retries initialization after app-server startup failure",
 
   assert.equal(gateway.starts, 2);
   assert.equal(session.threadId, "thread-1");
+});
+
+test("worktree commit requests select the related session and define safe scope", async () => {
+  const manager = new SessionManager(new FakeGateway(), new MemoryRepository());
+  await manager.initialize();
+  const idle = await manager.createSession("C:\\work\\.worktrees\\issue-42");
+  const active = await manager.createSession("C:\\work\\.worktrees\\issue-42", "Continue work");
+
+  assert.equal(findWorktreeSession(manager.list(), idle.cwd, idle.id)?.id, idle.id);
+  assert.equal(findWorktreeSession(manager.list(), active.cwd, "another-session")?.id, active.id);
+  assert.equal(findWorktreeSession(manager.list(), "C:\\work\\.worktrees\\missing", idle.id), undefined);
+  const instruction = worktreeCommitInstruction(idle.cwd, "issue/42-session-commit");
+  assert.match(instruction, /未コミット差分を確認/);
+  assert.match(instruction, /テストまたは検証/);
+  assert.match(instruction, /日本語のコミットメッセージ/);
+  assert.match(instruction, /push、マージ、worktree削除は行わない/);
 });

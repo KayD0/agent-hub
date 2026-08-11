@@ -11,21 +11,9 @@ export interface WorktreeMergeResult {
   alreadyMerged: boolean;
 }
 
-export interface WorktreeCommitResult { branch: string; commit: string }
-
 interface WorktreeEntry { path: string; branch?: string }
 
 export class WorktreeMergeManager {
-  public async commit(sourcePath: string, expectedSourceBranch: string, message: string): Promise<WorktreeCommitResult> {
-    const normalizedMessage = message.trim();
-    if (!normalizedMessage) throw new Error("コミットメッセージを入力してください。");
-    await this.assertBranch(sourcePath, expectedSourceBranch);
-    if (!(await this.hasChanges(sourcePath))) throw new Error("コミットする変更がありません。");
-    await this.git(sourcePath, ["add", "-A"]);
-    await this.git(sourcePath, ["commit", "-m", normalizedMessage]);
-    return { branch: expectedSourceBranch, commit: (await this.git(sourcePath, ["rev-parse", "HEAD"])).trim() };
-  }
-
   public async remove(sourcePath: string, expectedSourceBranch: string, groupRootPath: string, targetBranch = "develop"): Promise<void> {
     const managedRoot = path.resolve(groupRootPath, ".worktrees");
     const relative = path.relative(managedRoot, path.resolve(sourcePath));
@@ -67,10 +55,6 @@ export class WorktreeMergeManager {
     const sourceBranch = (await this.git(sourcePath, ["branch", "--show-current"])).trim();
     if (!sourceBranch || sourceBranch !== expectedSourceBranch) throw new Error(`worktreeのブランチが変更されています: ${sourceBranch || "detached HEAD"}`);
     return sourceBranch;
-  }
-
-  private async hasChanges(cwd: string): Promise<boolean> {
-    return (await this.git(cwd, ["status", "--porcelain", "-z"])).length > 0;
   }
 
   private async assertClean(cwd: string, label: string, ignoreManagedWorktrees: boolean): Promise<void> {

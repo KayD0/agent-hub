@@ -94,4 +94,9 @@ test("merge queue selects only safe candidates and posts their ids", async (cont
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "openWorktreeChanges", candidateId: "dirty" }));
   dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.click();
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "commitWorktree", candidateId: "dirty" }));
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.textContent, "未コミット差分コミット");
+  const dirtyRow = dom.window.document.querySelector<HTMLButtonElement>('[data-commit-worktree="dirty"]')!.closest("article")!;
+  assert.equal(dirtyRow.querySelector(".merge-path")?.textContent, "C:\\…\\.worktrees\\issue-40");
+  assert.equal(dirtyRow.children.length, 2);
+  assert.equal(dom.window.document.querySelector('[data-commit-worktree="merged"]'), null);
 });

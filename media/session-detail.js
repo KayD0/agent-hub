@@ -48,6 +48,8 @@
     if (!candidates.length) { const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "関連するIssue用worktreeはありません。"; container.append(empty); updateMergeAction(); return; }
     for (const candidate of candidates) {
       const row = document.createElement("article");
+      row.className = "merge-row";
+      const summary = document.createElement("div"); summary.className = "merge-summary";
       const label = document.createElement("label");
       const checkbox = document.createElement("input"); checkbox.type = "checkbox";
       const mergeable = !candidate.dirty && candidate.mergeStatus === "unmerged" && candidate.baseBranch === "develop";
@@ -56,17 +58,27 @@
       else if (removable) checkbox.dataset.cleanupCandidate = candidate.id;
       checkbox.disabled = !mergeable && !removable; checkbox.addEventListener("change", updateMergeAction);
       const title = document.createElement("strong"); title.textContent = candidate.branch + " → " + candidate.baseBranch;
-      const detail = document.createElement("p"); detail.className = "meta"; detail.textContent = candidate.rootPath;
-      const state = document.createElement("p"); state.className = "meta"; state.textContent = candidate.dirty ? "未コミット差分あり" : candidate.inUse ? "セッションで使用中" : candidate.mergeStatus === "merged" ? "マージ済み" : candidate.mergeStatus === "unmerged" ? "未マージ" : "判定不能";
-      const actions = document.createElement("div"); actions.className = "actions";
+      const separator = document.createElement("span"); separator.textContent = "/"; separator.className = "merge-separator";
+      const stateText = candidate.dirty ? "未コミット差分あり" : candidate.inUse ? "セッションで使用中" : candidate.mergeStatus === "merged" ? "マージ済み" : candidate.mergeStatus === "unmerged" ? "未マージ" : "判定不能";
+      const detail = document.createElement("span"); detail.className = "merge-path"; detail.textContent = compactWorktreePath(candidate.rootPath); detail.title = candidate.rootPath + "（" + stateText + "）";
+      const actions = document.createElement("div"); actions.className = "actions merge-actions";
       const changes = document.createElement("button"); changes.type = "button"; changes.textContent = "差分を見る"; changes.dataset.openChanges = candidate.id;
-      const commit = document.createElement("button"); commit.type = "button"; commit.textContent = "コミット"; commit.dataset.commitWorktree = candidate.id; commit.disabled = !candidate.dirty;
-      actions.append(changes, commit); label.append(checkbox, title); row.append(label, detail, state, actions); container.append(row);
+      actions.append(changes);
+      if (candidate.dirty) { const commit = document.createElement("button"); commit.type = "button"; commit.textContent = "未コミット差分コミット"; commit.dataset.commitWorktree = candidate.id; actions.append(commit); }
+      label.append(checkbox, title, separator, detail); summary.append(label); row.append(summary, actions); container.append(row);
     }
     updateMergeAction();
   }
 
   function updateMergeAction() { byId("run-merge").disabled = mergeRunning || !document.querySelector("[data-merge-candidate]:checked"); byId("remove-worktrees").disabled = mergeRunning || !document.querySelector("[data-cleanup-candidate]:checked"); }
+
+  function compactWorktreePath(value) {
+    const separator = value.includes("\\") ? "\\" : "/";
+    const parts = value.split(/[\\/]+/).filter(Boolean);
+    if (parts.length <= 3) return value;
+    const root = /^[A-Za-z]:$/.test(parts[0]) ? parts.shift() : value.startsWith("/") ? "" : parts.shift();
+    return (root ? root + separator : separator) + "…" + separator + parts.slice(-2).join(separator);
+  }
 
   const tabs = [...document.querySelectorAll('[role="tab"]')];
   function activateTab(name, focus = false) {
