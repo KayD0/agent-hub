@@ -10,6 +10,7 @@ import { AppServerClient } from "./infrastructure/codex/app-server-client";
 import { GitRepositoryReader } from "./infrastructure/git/git-repository-reader";
 import { IssueWorktreeManager } from "./infrastructure/git/issue-worktree-manager";
 import { WorktreeMergeManager } from "./infrastructure/git/worktree-merge-manager";
+import { WorktreeIntegrationService } from "./application/worktree-integration-service";
 import { RepositoryFileReader } from "./infrastructure/filesystem/repository-file-reader";
 import { VsCodeSessionRepository } from "./infrastructure/vscode/session-store";
 import { FileLogger } from "./infrastructure/vscode/file-logger";
@@ -20,6 +21,7 @@ import { RepositoryWebviewProvider } from "./presentation/repository-webview-pro
 import { GitHubIssueClient } from "./infrastructure/github/github-issue-client";
 import { GitHubIssuesPanel } from "./presentation/github-issues-panel";
 import { FolderAnalysisPanel } from "./presentation/folder-analysis-panel";
+import { IntegrationPanel } from "./presentation/integration-panel";
 import { competitiveAnalysisPrompt, folderAnalysisPrompt } from "./application/folder-analysis-prompt";
 import { CompetitiveAnalysisFocus, FolderAnalysisCandidate, FolderAnalysisDepth, FolderAnalysisKind, FolderAnalysisScope } from "./domain/folder-analysis";
 import { collectEnvironmentDiagnostics } from "./infrastructure/system/environment-diagnostics";
@@ -141,6 +143,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const candidate of candidates) urls.push(await githubIssueClient.createIssue(repository, candidate.title, folderAnalysisIssueBody(candidate, analysisKind)));
     return urls;
   }, showError);
+  const integrationService = new WorktreeIntegrationService(repositoryManager, manager, worktreeMerges);
+  const integrationPanel = new IntegrationPanel(repositoryManager, manager, integrationService, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), showError);
   const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), context.extensionUri, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), (sessionId) => folderAnalysisPanel.showSession(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, showError);
   let repositoriesView: RepositoryWebviewProvider;
@@ -224,7 +228,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await repositoryManager.remove(repositoryId);
     await repositoriesView.refresh();
   };
-  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), openGroupTerminal, createGroupSession, analyzeGroup, removeRepository, showError);
+  repositoriesView = new RepositoryWebviewProvider(repositoryManager, (repositoryId) => repositoryDiffPanel.show(repositoryId), (repositoryId) => githubIssuesPanel.show(repositoryId), (repositoryId) => integrationPanel.show(repositoryId), openGroupTerminal, createGroupSession, analyzeGroup, removeRepository, showError);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("agentHub.sessions", sessionsView),
     vscode.window.registerWebviewViewProvider("agentHub.repositories", repositoriesView),
@@ -233,6 +237,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     repositoryDiffPanel,
     githubIssuesPanel,
     folderAnalysisPanel,
+    integrationPanel,
     repositoryManager,
     { dispose: () => void manager?.dispose() },
   );

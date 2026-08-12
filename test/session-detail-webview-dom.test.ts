@@ -66,8 +66,12 @@ test("detail send contract preserves IME composition", async (context) => {
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "send", text: "日本語" }));
 });
 
-test("merge queue selects only safe candidates and posts their ids", async (context) => {
+test("session detail does not render repository integration controls", async (context) => {
   const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  assert.equal(dom.window.document.querySelector("#merge-tab"), null);
+  assert.equal(dom.window.document.querySelector("#worktree-tab"), null);
+  assert.equal(JSON.stringify(posted), JSON.stringify([{ type: "ready" }]));
+  return;
   dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "mergeQueue", candidates: [
     { id: "safe", branch: "issue/39", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-39", mergeStatus: "unmerged", dirty: false },
     { id: "dirty", branch: "issue/40", baseBranch: "develop", rootPath: "C:\\work\\.worktrees\\issue-40", mergeStatus: "unmerged", dirty: true },

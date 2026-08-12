@@ -3,7 +3,7 @@ import * as path from "node:path";
 import test from "node:test";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "../src/application/ports";
 import { SessionManager } from "../src/application/session-manager";
-import { conflictResolutionInstruction, worktreeCommitInstruction } from "../src/application/worktree-session";
+import { conflictResolutionInstruction, selectAvailableWorktreeSession, worktreeCommitInstruction } from "../src/application/worktree-session";
 import { PersistedSession, SessionStatus, attentionForStatus, isAttentionLevel, isSessionStatus } from "../src/domain/session";
 
 class MemoryRepository implements SessionRepository {
@@ -759,4 +759,16 @@ test("conflict resolution requests keep develop clean and stop on ambiguity", ()
   assert.match(instruction, /テストまたは検証/);
   assert.match(instruction, /判断できない競合は推測で解決せず/);
   assert.match(instruction, /push、developへのマージ、worktree削除は行わない/);
+});
+
+test("integration tasks prefer an idle matching worktree session and never reuse an assigned session", async () => {
+  class UniqueThreadGateway extends FakeGateway { private next = 0; public override async startThread(): Promise<{ threadId: string }> { this.next += 1; return { threadId: `thread-${this.next}` }; } }
+  const manager = new SessionManager(new UniqueThreadGateway(), new MemoryRepository());
+  await manager.initialize();
+  const groupSession = await manager.createSession("C:\\work");
+  const matching = await manager.createSession("C:\\work\\.worktrees\\issue-46");
+  const busy = await manager.createSession("C:\\work\\.worktrees\\issue-47", "working");
+  assert.equal(selectAvailableWorktreeSession(manager.list(), "C:\\work", matching.cwd, new Set())?.id, matching.id);
+  assert.equal(selectAvailableWorktreeSession(manager.list(), "C:\\work", busy.cwd, new Set([matching.id]))?.id, groupSession.id);
+  assert.equal(selectAvailableWorktreeSession(manager.list(), "C:\\work", busy.cwd, new Set([matching.id, groupSession.id])), undefined);
 });
