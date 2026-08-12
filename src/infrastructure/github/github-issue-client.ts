@@ -5,9 +5,10 @@ import { GitHubIssue, GitHubRepositoryRef } from "../../domain/github-issue";
 const execFileAsync = promisify(execFile);
 
 export class GitHubIssueClient {
+  public constructor(private readonly environment: NodeJS.ProcessEnv = process.env) {}
   public async assertReady(): Promise<void> {
     try {
-      await execFileAsync("gh", ["auth", "status", "--hostname", "github.com"], { encoding: "utf8", windowsHide: true });
+      await execFileAsync("gh", ["auth", "status", "--hostname", "github.com"], { encoding: "utf8", windowsHide: true, env: this.environment });
     } catch (error) {
       throw new Error(githubIssueError(errorMessage(error)));
     }
@@ -27,7 +28,7 @@ export class GitHubIssueClient {
 
   public async listOpenIssues(repository: GitHubRepositoryRef): Promise<GitHubIssue[]> {
     try {
-      const { stdout } = await execFileAsync("gh", ["issue", "list", "--repo", repository.slug, "--state", "open", "--limit", "100", "--json", "number,title,body,url,labels,assignees,updatedAt"], { encoding: "utf8", windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+      const { stdout } = await execFileAsync("gh", ["issue", "list", "--repo", repository.slug, "--state", "open", "--limit", "100", "--json", "number,title,body,url,labels,assignees,updatedAt"], { encoding: "utf8", windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: this.environment });
       return parseIssueList(stdout, repository);
     } catch (error) {
       const message = errorMessage(error);
@@ -37,7 +38,7 @@ export class GitHubIssueClient {
 
   public async createIssue(repository: GitHubRepositoryRef, title: string, body: string): Promise<string> {
     try {
-      const { stdout } = await execFileAsync("gh", ["issue", "create", "--repo", repository.slug, "--title", title, "--body", body], { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024 });
+      const { stdout } = await execFileAsync("gh", ["issue", "create", "--repo", repository.slug, "--title", title, "--body", body], { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024, env: this.environment });
       const url = stdout.trim();
       if (!/^https:\/\/github\.com\//i.test(url)) throw new Error("作成結果からIssue URLを取得できませんでした。");
       return url;

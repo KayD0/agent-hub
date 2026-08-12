@@ -3,6 +3,7 @@ import * as path from "node:path";
 import test from "node:test";
 import { isWorktreeRepository } from "../src/application/repository-visibility";
 import { githubIssueError, parseGitHubRemote, parseIssueList } from "../src/infrastructure/github/github-issue-client";
+import { githubCliConfigDirectory, sharedGitHubEnvironment } from "../src/infrastructure/github/github-cli-environment";
 
 test("identifies only repositories below the managed worktrees directory", () => {
   const group = path.resolve("work", "group");
@@ -36,5 +37,14 @@ test("distinguishes missing gh and missing authentication", () => {
   assert.match(githubIssueError("spawn gh ENOENT"), /見つかりません/);
   assert.match(githubIssueError("To get started with GitHub CLI, please run: gh auth login"), /認証が必要/);
   assert.match(githubIssueError("network unavailable"), /取得できません/);
+});
+
+test("shares an explicit GitHub CLI config directory while preserving the process environment", () => {
+  const configured = path.resolve("work", "shared-gh");
+  const environment = sharedGitHubEnvironment({ PATH: "tools", GH_CONFIG_DIR: configured, GH_TOKEN: "secret" });
+  assert.equal(environment.GH_CONFIG_DIR, configured);
+  assert.equal(environment.PATH, "tools");
+  assert.equal(environment.GH_TOKEN, "secret");
+  assert.equal(githubCliConfigDirectory({ APPDATA: "C:\\Users\\test\\AppData\\Roaming" }, "win32"), "C:\\Users\\test\\AppData\\Roaming\\GitHub CLI");
 });
 

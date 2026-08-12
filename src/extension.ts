@@ -19,6 +19,7 @@ import { SessionWebviewProvider } from "./presentation/session-webview-provider"
 import { RepositoryDiffPanel } from "./presentation/repository-diff-panel";
 import { RepositoryWebviewProvider } from "./presentation/repository-webview-provider";
 import { GitHubIssueClient } from "./infrastructure/github/github-issue-client";
+import { sharedGitHubEnvironment } from "./infrastructure/github/github-cli-environment";
 import { GitHubIssuesPanel } from "./presentation/github-issues-panel";
 import { FolderAnalysisPanel } from "./presentation/folder-analysis-panel";
 import { IntegrationPanel } from "./presentation/integration-panel";
@@ -40,13 +41,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const codexPath = readCodexPath();
   const codexArgs = vscode.workspace.getConfiguration("agentHub").get<string[]>("codexArgs", []);
   const autoApprovalPolicy = readAutoApprovalPolicy();
+  const githubEnvironment = sharedGitHubEnvironment();
   await logger.info("Extension activation started", { codexPath: codexPath ?? "PATH:codex" });
-  const gateway = new AppServerClient(readCodexPath, (message) => void logger?.info("Codex app-server event", summarizeAppServerLog(message)), codexArgs);
+  const gateway = new AppServerClient(readCodexPath, (message) => void logger?.info("Codex app-server event", summarizeAppServerLog(message)), codexArgs, 30_000, githubEnvironment);
   const authentication = new AuthenticationManager(gateway);
   const gitReader = new GitRepositoryReader();
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
   const repositoryDiffPanel = new RepositoryDiffPanel(repositoryManager, gitReader, new RepositoryFileReader(), showError);
-  const githubIssueClient = new GitHubIssueClient();
+  const githubIssueClient = new GitHubIssueClient(githubEnvironment);
   const issueWorktrees = new IssueWorktreeManager();
   const worktreeMerges = new WorktreeMergeManager();
   const githubIssuesPanel = new GitHubIssuesPanel(repositoryManager, githubIssueClient, async (issue, groupId, targetMode) => {
@@ -272,7 +274,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.redetectEnvironment", () => showSetup(context, authentication, output)),
     vscode.commands.registerCommand("agentHub.showLogs", () => output.show(true)),
     vscode.commands.registerCommand("agentHub.exportDiagnostics", () => exportDiagnostics(context, authentication)),
-    vscode.commands.registerCommand("agentHub.githubLogin", () => { const terminal = vscode.window.createTerminal({ name: "GitHub CLI Login" }); terminal.show(); terminal.sendText("gh auth login", true); }),
+    vscode.commands.registerCommand("agentHub.githubLogin", () => { const terminal = vscode.window.createTerminal({ name: "GitHub CLI Login", env: { GH_CONFIG_DIR: githubEnvironment.GH_CONFIG_DIR } }); terminal.show(); terminal.sendText("gh auth login", true); }),
   );
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async (event) => {

@@ -36,6 +36,7 @@ export class AppServerClient implements CodexGateway {
     private readonly log: (message: string) => void,
     private readonly commandArgs: readonly string[] = [],
     private readonly requestTimeoutMs = 30_000,
+    private readonly environment: NodeJS.ProcessEnv = process.env,
   ) {}
 
   public async start(): Promise<void> {
@@ -45,6 +46,7 @@ export class AppServerClient implements CodexGateway {
     const child = spawn(command.file, [...command.args, ...this.commandArgs, "app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      env: this.environment,
     });
     this.process = child;
     child.stderr.setEncoding("utf8");
