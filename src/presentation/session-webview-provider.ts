@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { AuthenticationManager } from "../application/authentication-manager";
 import { SessionManager } from "../application/session-manager";
+import { shouldRefreshSessionList } from "../application/session-list-refresh";
 import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
@@ -38,7 +39,9 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     private readonly showError: (error: unknown) => void,
   ) {
     this.selectedRepositoryGroupIds = new Set(state.get<string[]>(SessionWebviewProvider.repositoryFilterKey, []));
-    this.subscription = manager.onDidChange(() => this.refresh());
+    this.subscription = manager.onDidChange((change) => {
+      if (shouldRefreshSessionList(change)) this.refresh();
+    });
     this.authSubscription = authentication.onDidChange(() => this.refresh());
   }
 
