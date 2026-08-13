@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { DiscoveredRepository, RegisteredRepository, RepositoryGroupSnapshot, RepositorySnapshot } from "../domain/repository";
 import { GitRepositoryReader } from "../infrastructure/git/git-repository-reader";
+import { deepestContainingRoot, managedWorktreeRoot } from "./repository-change-target";
 
 const STORAGE_KEY = "agentHub.repositories.v1";
 const BASE_BRANCH_STORAGE_KEY = "agentHub.repositoryBaseBranches.v1";
@@ -14,6 +15,8 @@ export class RepositoryManager implements vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   private readonly gitWatchers = new Map<string, vscode.FileSystemWatcher>();
   private readonly worktreeWatchers = new Map<string, vscode.FileSystemWatcher>();
+  private readonly repositoryRoots = new Map<string, string[]>();
+  private readonly snapshots = new Map<string, RepositorySnapshot>();
   private refreshTimer?: NodeJS.Timeout;
   public readonly onDidChange = this.changeEmitter.event;
 
@@ -33,12 +36,14 @@ export class RepositoryManager implements vscode.Disposable {
     if (existing) return existing;
     const repository = { id: Buffer.from(rootPath.toLocaleLowerCase()).toString("base64url"), name: path.basename(rootPath), rootPath, registeredAt: Date.now() };
     this.repositories = [...this.repositories, repository];
+    this.repositoryRoots.delete(repository.id);
     await this.persist();
     return repository;
   }
 
   public async remove(id: string): Promise<void> {
     this.repositories = this.repositories.filter((repository) => repository.id !== id);
+    this.clearGroupCache(id);
     this.disposeGroupWatchers(id);
     await this.persist();
   }
@@ -49,6 +54,8 @@ export class RepositoryManager implements vscode.Disposable {
     this.gitWatchers.clear();
     for (const watcher of this.worktreeWatchers.values()) watcher.dispose();
     this.worktreeWatchers.clear();
+    this.repositoryRoots.clear();
+    this.snapshots.clear();
     this.changeEmitter.dispose();
   }
 
@@ -71,17 +78,25 @@ export class RepositoryManager implements vscode.Disposable {
     if (!candidates.includes(baseBranch)) throw new Error("選択された基準ブランチが見つかりません。");
     this.baseBranches = { ...this.baseBranches, [repositoryKey(rootPath)]: baseBranch };
     await this.state.update(BASE_BRANCH_STORAGE_KEY, this.baseBranches);
+    this.snapshots.delete(repositoryKey(rootPath));
     this.changeEmitter.fire();
   }
 
   public async groupSnapshot(group: RegisteredRepository): Promise<RepositoryGroupSnapshot> {
     try {
-      const repositories = await discoverGitRoots(group.rootPath);
+      const repositories = await this.discoverGroupRoots(group);
       await this.ensureGitWatchers(group.id, repositories);
-      const snapshots = await Promise.all(repositories.map((rootPath) => this.snapshot({
-        id: `${group.id}:${Buffer.from(rootPath.toLocaleLowerCase()).toString("base64url")}`,
-        name: path.basename(rootPath), rootPath, relativePath: path.relative(group.rootPath, rootPath) || ".",
-      })));
+      const snapshots = await Promise.all(repositories.map(async (rootPath) => {
+        const key = repositoryKey(rootPath);
+        const cached = this.snapshots.get(key);
+        if (cached) return cached;
+        const snapshot = await this.snapshot({
+          id: `${group.id}:${Buffer.from(rootPath.toLocaleLowerCase()).toString("base64url")}`,
+          name: path.basename(rootPath), rootPath, relativePath: path.relative(group.rootPath, rootPath) || ".",
+        });
+        this.snapshots.set(key, snapshot);
+        return snapshot;
+      }));
       return { ...group, repositories: snapshots, files: snapshots.reduce((sum, item) => sum + item.files.length, 0), additions: snapshots.reduce((sum, item) => sum + item.additions, 0), deletions: snapshots.reduce((sum, item) => sum + item.deletions, 0) };
     } catch (error) {
       return { ...group, repositories: [], files: 0, additions: 0, deletions: 0, error: errorMessage(error) };
@@ -99,7 +114,12 @@ export class RepositoryManager implements vscode.Disposable {
       desired.add(key);
       if (!this.gitWatchers.has(key)) {
         const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(gitDirectory, "{HEAD,index,packed-refs,refs/**}"));
-        const notify = (): void => this.scheduleChange();
+        const notify = (uri: vscode.Uri): void => {
+          const relative = path.relative(gitDirectory, uri.fsPath);
+          if (relative === "packed-refs" || relative.split(path.sep).includes("refs")) this.clearGroupSnapshots(groupId);
+          else this.snapshots.delete(repositoryKey(rootPath));
+          this.scheduleChange();
+        };
         watcher.onDidCreate(notify);
         watcher.onDidChange(notify);
         watcher.onDidDelete(notify);
@@ -110,7 +130,13 @@ export class RepositoryManager implements vscode.Disposable {
         const worktreeWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(rootPath, "**/*"));
         const notifyWorktree = (uri: vscode.Uri): void => {
           const relative = path.relative(rootPath, uri.fsPath);
-          if (!relative.split(path.sep).some((segment) => IGNORED_DIRECTORIES.has(segment))) this.scheduleChange();
+          if (relative.split(path.sep).some((segment) => IGNORED_DIRECTORIES.has(segment))) return;
+          const roots = this.repositoryRoots.get(groupId) ?? [rootPath];
+          const targetRoot = deepestContainingRoot(uri.fsPath, roots);
+          const managedWorktree = managedWorktreeRoot(uri.fsPath, this.get(groupId)?.rootPath);
+          if (managedWorktree && !roots.some((candidate) => samePath(candidate, managedWorktree))) this.repositoryRoots.delete(groupId);
+          if (targetRoot) this.snapshots.delete(repositoryKey(targetRoot));
+          this.scheduleChange();
         };
         worktreeWatcher.onDidCreate(notifyWorktree);
         worktreeWatcher.onDidChange(notifyWorktree);
@@ -134,6 +160,23 @@ export class RepositoryManager implements vscode.Disposable {
     for (const [key, watcher] of this.worktreeWatchers) {
       if (key.startsWith(`${groupId}:`)) { watcher.dispose(); this.worktreeWatchers.delete(key); }
     }
+  }
+
+  private async discoverGroupRoots(group: RegisteredRepository): Promise<string[]> {
+    const cached = this.repositoryRoots.get(group.id);
+    if (cached) return cached;
+    const roots = await discoverGitRoots(group.rootPath);
+    this.repositoryRoots.set(group.id, roots);
+    return roots;
+  }
+
+  private clearGroupCache(groupId: string): void {
+    this.clearGroupSnapshots(groupId);
+    this.repositoryRoots.delete(groupId);
+  }
+
+  private clearGroupSnapshots(groupId: string): void {
+    for (const rootPath of this.repositoryRoots.get(groupId) ?? []) this.snapshots.delete(repositoryKey(rootPath));
   }
 
   private scheduleChange(): void {

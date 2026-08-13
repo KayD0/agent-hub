@@ -4,6 +4,7 @@ import test from "node:test";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "../src/application/ports";
 import { SessionManager } from "../src/application/session-manager";
 import { shouldRefreshSessionList } from "../src/application/session-list-refresh";
+import { deepestContainingRoot, managedWorktreeRoot } from "../src/application/repository-change-target";
 import { conflictResolutionInstruction, selectAvailableWorktreeSession, worktreeCommitInstruction } from "../src/application/worktree-session";
 import { PersistedSession, SessionStatus, attentionForStatus, isAttentionLevel, isSessionStatus } from "../src/domain/session";
 
@@ -17,6 +18,14 @@ test("session list ignores delta-only changes", () => {
   assert.equal(shouldRefreshSessionList({ sessionId: "thread-1", kind: "delta" }), false);
   assert.equal(shouldRefreshSessionList({ sessionId: "thread-1", kind: "state" }), true);
   assert.equal(shouldRefreshSessionList({ kind: "collection" }), true);
+});
+
+test("repository changes select the deepest matching worktree", () => {
+  const group = path.resolve("C:\\work");
+  const worktree = path.join(group, ".worktrees", "issue-42");
+  assert.equal(deepestContainingRoot(path.join(worktree, "src", "index.ts"), [group, worktree]), worktree);
+  assert.equal(managedWorktreeRoot(path.join(worktree, "src", "index.ts"), group), worktree);
+  assert.equal(managedWorktreeRoot(path.join(group, "src", "index.ts"), group), undefined);
 });
 
 class FakeGateway implements CodexGateway {
