@@ -4,6 +4,8 @@ import { RepositoryGroupSnapshot } from "../domain/repository";
 
 export class RepositoryWebviewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
+  private dirty = true;
+  private refreshing?: Promise<void>;
   public constructor(
     private readonly manager: RepositoryManager,
     private readonly openRepository: (repositoryId: string) => Promise<void>,
@@ -15,8 +17,27 @@ export class RepositoryWebviewProvider implements vscode.WebviewViewProvider {
     private readonly removeRepository: (repositoryId: string) => Promise<void>,
     private readonly onError: (error: unknown) => void,
   ) {}
-  public resolveWebviewView(view: vscode.WebviewView): void { this.view = view; view.webview.options = { enableScripts: true }; view.webview.onDidReceiveMessage((message: unknown) => void this.handleMessage(message)); view.onDidDispose(() => { this.view = undefined; }); void this.refresh(); }
-  public async refresh(): Promise<void> { if (this.view) this.view.webview.html = renderHtml(await this.manager.groupSnapshots()); }
+  public resolveWebviewView(view: vscode.WebviewView): void {
+    this.view = view;
+    view.webview.options = { enableScripts: true };
+    view.webview.onDidReceiveMessage((message: unknown) => void this.handleMessage(message));
+    view.onDidChangeVisibility(() => { if (view.visible && this.dirty) void this.refresh(); });
+    view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
+    void this.refresh();
+  }
+  public async refresh(): Promise<void> {
+    const view = this.view;
+    if (!view || !view.visible) { this.dirty = true; return; }
+    this.dirty = true;
+    if (this.refreshing) return this.refreshing;
+    this.refreshing = (async () => {
+      while (this.dirty && this.view === view && view.visible) {
+        this.dirty = false;
+        view.webview.html = renderHtml(await this.manager.groupSnapshots());
+      }
+    })().finally(() => { this.refreshing = undefined; });
+    return this.refreshing;
+  }
   private async handleMessage(value: unknown): Promise<void> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     const message = value as { type?: unknown; repositoryId?: unknown };

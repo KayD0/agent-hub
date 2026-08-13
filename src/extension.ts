@@ -285,7 +285,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }));
 
   context.subscriptions.push(repositoryManager.onDidChange(() => {
-    sessionsView.refresh(true);
     void Promise.all([repositoriesView.refresh(), repositoryDiffPanel.refresh()]).catch(showError);
   }));
 

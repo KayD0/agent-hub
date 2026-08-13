@@ -9,6 +9,7 @@ export class RepositoryDiffPanel implements vscode.Disposable {
   private readonly selectedPaths = new Map<string, string>();
   private readonly selectedCommits = new Map<string, string>();
   private readonly selectedCommitFiles = new Map<string, string>();
+  private readonly dirtyPanels = new Set<string>();
 
   public constructor(
     private readonly manager: RepositoryManager,
@@ -26,9 +27,13 @@ export class RepositoryDiffPanel implements vscode.Disposable {
       this.panels.set(repositoryId, panel);
       panel.onDidDispose(() => {
         this.panels.delete(repositoryId);
+        this.dirtyPanels.delete(repositoryId);
         this.selectedPaths.delete(repositoryId);
         this.selectedCommits.delete(repositoryId);
         this.selectedCommitFiles.delete(repositoryId);
+      });
+      panel.onDidChangeViewState(() => {
+        if (panel?.visible && this.dirtyPanels.has(repositoryId)) void this.render(repositoryId, panel).catch(this.onError);
       });
       panel.webview.onDidReceiveMessage((message: unknown) => void this.handleMessage(repositoryId, message));
     } else {
@@ -54,10 +59,14 @@ export class RepositoryDiffPanel implements vscode.Disposable {
     this.selectedPaths.clear();
     this.selectedCommits.clear();
     this.selectedCommitFiles.clear();
+    this.dirtyPanels.clear();
   }
 
   public async refresh(): Promise<void> {
-    await Promise.all([...this.panels].map(([repositoryId, panel]) => this.render(repositoryId, panel)));
+    await Promise.all([...this.panels].map(([repositoryId, panel]) => {
+      if (!panel.visible) { this.dirtyPanels.add(repositoryId); return Promise.resolve(); }
+      return this.render(repositoryId, panel);
+    }));
   }
 
   private async handleMessage(repositoryId: string, value: unknown): Promise<void> {
@@ -115,6 +124,7 @@ export class RepositoryDiffPanel implements vscode.Disposable {
   }
 
   private async render(repositoryId: string, panel: vscode.WebviewPanel): Promise<void> {
+    this.dirtyPanels.delete(repositoryId);
     const repository = this.manager.get(repositoryId);
     if (!repository) { panel.dispose(); return; }
     const snapshot = await this.manager.groupSnapshot(repository);
