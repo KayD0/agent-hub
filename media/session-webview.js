@@ -21,6 +21,15 @@
   let approvalBanner;
   let draggedSessionId;
   let composingSessionId;
+  const maxImages = 4;
+
+  function pastedImages(event) {
+    return [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file" && ["image/png", "image/jpeg"].includes(item.type)).map((item) => item.getAsFile()).filter(Boolean);
+  }
+
+  function imageData(file) {
+    return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ mimeType: file.type, dataUrl: reader.result }); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
+  }
 
   function el(tag, className, text) {
     const node = document.createElement(tag);
@@ -186,6 +195,7 @@
     const form = el("form", "card-input-form");
     form.setAttribute("role", "dialog");
     const input = el("textarea");
+    let images = [];
     input.rows = 2;
     input.placeholder = "このセッションへ指示...";
     input.title = "Enterで送信、Ctrl+Enter（MacはCommand+Enter）で改行";
@@ -193,13 +203,33 @@
     send.type = "submit";
     send.title = "指示を送信";
     send.setAttribute("aria-label", "指示を送信");
-    form.append(input, send);
+    const attachments = el("span", "card-attachments", "📎 0");
+    attachments.hidden = true;
+    attachments.title = "貼り付けた画像をすべて削除";
+    attachments.tabIndex = 0;
+    const clearImages = () => { images = []; attachments.hidden = true; attachments.textContent = "📎 0"; };
+    attachments.addEventListener("click", clearImages);
+    attachments.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") clearImages(); });
+    form.append(input, attachments, send);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const text = input.value.trim();
-      if (!text) return;
-      vscode.postMessage({ type: "send", sessionId: card.dataset.sessionId, text });
+      if (!text && !images.length) return;
+      const message = { type: "send", sessionId: card.dataset.sessionId, text };
+      if (images.length) message.images = images;
+      vscode.postMessage(message);
       input.value = "";
+      clearImages();
+    });
+    input.addEventListener("paste", async (event) => {
+      const files = pastedImages(event);
+      if (!files.length) return;
+      event.preventDefault();
+      if (images.length + files.length > maxImages || files.some((file) => file.size > 10 * 1024 * 1024)) { window.alert("画像はPNG/JPEG、1枚10MB以内、一度に4枚までです。"); return; }
+      images.push(...await Promise.all(files.map(imageData)));
+      attachments.hidden = false;
+      attachments.textContent = "📎 " + images.length;
+      attachments.setAttribute("aria-label", `添付画像${images.length}枚。押すとすべて削除`);
     });
     input.addEventListener("compositionstart", () => { composingSessionId = card.dataset.sessionId; });
     input.addEventListener("compositionend", () => { composingSessionId = undefined; });

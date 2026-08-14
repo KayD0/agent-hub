@@ -7,6 +7,7 @@ import { conflictResolutionInstruction, worktreeCommitInstruction } from "../app
 import { ManagedSession, SessionActivity } from "../domain/session";
 import { WorktreeMergeManager } from "../infrastructure/git/worktree-merge-manager";
 import { renderMarkdown } from "./markdown-renderer";
+import { ImageInputStore, parsePastedImages } from "../infrastructure/filesystem/image-input-store";
 
 const UPDATE_DELAY_MS = 80;
 const URGENT_STATUSES = new Set(["waiting_for_approval", "waiting_for_input", "completed", "failed", "interrupted"]);
@@ -49,6 +50,7 @@ export class SessionDetailPanel implements vscode.Disposable {
     private readonly worktreeMerges: WorktreeMergeManager,
     private readonly openRepositoryChanges: (groupId: string, repositoryId: string) => Promise<void>,
     private readonly extensionUri: vscode.Uri,
+    private readonly imageInputs: ImageInputStore,
     private readonly onError: (error: unknown) => void,
   ) {
     this.subscription = manager.onDidChange((change) => this.refreshChanged(change));
@@ -84,10 +86,16 @@ export class SessionDetailPanel implements vscode.Disposable {
 
   private async handleMessage(sessionId: string, state: PanelState, value: unknown): Promise<void> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
-    const message = value as { type?: unknown; text?: unknown; decision?: unknown; candidateId?: unknown; candidateIds?: unknown };
+    const message = value as { type?: unknown; text?: unknown; images?: unknown; decision?: unknown; candidateId?: unknown; candidateIds?: unknown };
     if (message.type === "ready") { this.postUpdate(sessionId, state, true); await this.refreshMergeQueue(sessionId, state); return; }
     try {
-      if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());
+      if (message.type === "send" && typeof message.text === "string") {
+        const images = parsePastedImages(message.images);
+        if (!images || (!message.text.trim() && !images.length)) return;
+        const paths = await this.imageInputs.save(images);
+        try { await this.manager.sendMessage(sessionId, message.text.trim(), paths); }
+        finally { await this.imageInputs.remove(paths); }
+      }
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);
       else if (message.type === "approval" && isDecision(message.decision)) this.manager.resolveApproval(sessionId, message.decision);
       else if (message.type === "refreshMergeQueue") await this.refreshMergeQueue(sessionId, state);

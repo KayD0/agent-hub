@@ -218,3 +218,23 @@ test("session details open from the card without a dedicated button", async (con
   card.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "open", sessionId: "one" }));
 });
+
+test("card image paste shows only a paperclip count and sends the image", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one")]);
+  const input = dom.window.document.querySelector<HTMLTextAreaElement>('[data-session-id="one"] textarea')!;
+  const file = new dom.window.File(["png"], "shot.png", { type: "image/png" });
+  const paste = new dom.window.Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { items: [{ kind: "file", type: file.type, getAsFile: () => file }] } });
+  input.dispatchEvent(paste);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const attachments = dom.window.document.querySelector<HTMLElement>(".card-attachments")!;
+  assert.equal(attachments.hidden, false);
+  assert.equal(attachments.textContent, "📎 1");
+  assert.equal(dom.window.document.querySelector(".card-input-form img,.card-input-form canvas"), null);
+  input.closest("form")!.dispatchEvent(new dom.window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+  assert.equal(posted.at(-1)?.type, "send");
+  assert.equal((posted.at(-1) as PostedMessage & { images?: unknown[] }).images?.length, 1);
+});

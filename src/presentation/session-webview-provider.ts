@@ -6,6 +6,7 @@ import { shouldRefreshSessionList } from "../application/session-list-refresh";
 import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
+import { ImageInputStore, parsePastedImages } from "../infrastructure/filesystem/image-input-store";
 
 type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "origin" | "relatedIssues" | "autoApprove" | "unrestrictedAutoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
 type RepositoryGroupFilter = { id: string; name: string; rootPath: string };
@@ -18,6 +19,7 @@ interface WebviewMessage {
   answers?: unknown;
   sessionIds?: unknown;
   enabled?: unknown;
+  images?: unknown;
 }
 
 export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -36,6 +38,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     private readonly listRepositoryGroups: () => readonly RepositoryGroupFilter[],
     private readonly state: vscode.Memento,
     private readonly extensionUri: vscode.Uri,
+    private readonly imageInputs: ImageInputStore,
     private readonly showError: (error: unknown) => void,
   ) {
     this.selectedRepositoryGroupIds = new Set(state.get<string[]>(SessionWebviewProvider.repositoryFilterKey, []));
@@ -171,7 +174,13 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     }
     if (!sessionId) return;
     try {
-      if (message.type === "send" && typeof message.text === "string" && message.text.trim()) await this.manager.sendMessage(sessionId, message.text.trim());
+      if (message.type === "send" && typeof message.text === "string") {
+        const images = parsePastedImages(message.images);
+        if (!images || (!message.text.trim() && !images.length)) return;
+        const paths = await this.imageInputs.save(images);
+        try { await this.manager.sendMessage(sessionId, message.text.trim(), paths); }
+        finally { await this.imageInputs.remove(paths); }
+      }
       else if (message.type === "autoApprove" && typeof message.enabled === "boolean") this.manager.setAutoApprove(sessionId, message.enabled);
       else if (message.type === "unrestrictedAutoApprove" && typeof message.enabled === "boolean") {
         if (!message.enabled) this.manager.setUnrestrictedAutoApprove(sessionId, false);

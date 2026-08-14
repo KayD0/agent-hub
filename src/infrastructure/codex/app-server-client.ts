@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as readline from "node:readline";
 import { AppServerEvent, AppServerRequest, CodexGateway } from "../../application/ports";
 import { AccountSnapshot, LoginStartResult } from "../../domain/authentication";
+import { CodexInput } from "../../domain/codex-input";
 import { decodeRpcMessage } from "./jsonl-protocol";
 
 type RequestId = number;
@@ -98,19 +99,19 @@ export class AppServerClient implements CodexGateway {
     await this.request("thread/resume", { threadId });
   }
 
-  public async startTurn(threadId: string, text: string): Promise<{ turnId?: string }> {
+  public async startTurn(threadId: string, input: readonly CodexInput[]): Promise<{ turnId?: string }> {
     const result = asObject(await this.request("turn/start", {
       threadId,
-      input: [{ type: "text", text }],
+      input,
     }));
     const turn = asObject(result.turn);
     return { turnId: asString(turn.id) };
   }
 
-  public async steerTurn(threadId: string, turnId: string, text: string): Promise<void> {
+  public async steerTurn(threadId: string, turnId: string, input: readonly CodexInput[]): Promise<void> {
     await this.request("turn/steer", {
       threadId,
-      input: [{ type: "text", text }],
+      input,
       expectedTurnId: turnId,
     });
   }

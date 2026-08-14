@@ -1,5 +1,6 @@
 import { PersistedSession } from "../domain/session";
 import { AccountSnapshot, LoginStartResult } from "../domain/authentication";
+import { CodexInput } from "../domain/codex-input";
 
 export interface AppServerEvent {
   method: string;
@@ -15,8 +16,8 @@ export interface CodexGateway {
   stop(): Promise<void>;
   startThread(cwd: string): Promise<{ threadId: string }>;
   resumeThread(threadId: string): Promise<void>;
-  startTurn(threadId: string, text: string): Promise<{ turnId?: string }>;
-  steerTurn(threadId: string, turnId: string, text: string): Promise<void>;
+  startTurn(threadId: string, input: readonly CodexInput[]): Promise<{ turnId?: string }>;
+  steerTurn(threadId: string, turnId: string, input: readonly CodexInput[]): Promise<void>;
   interruptTurn(threadId: string, turnId: string): Promise<void>;
   readAccount(refreshToken?: boolean): Promise<AccountSnapshot>;
   startLogin(type: "chatgpt" | "chatgptDeviceCode"): Promise<LoginStartResult>;

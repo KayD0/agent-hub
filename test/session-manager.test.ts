@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import * as path from "node:path";
+import * as os from "node:os";
+import * as fs from "node:fs/promises";
 import test from "node:test";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "../src/application/ports";
 import { SessionManager } from "../src/application/session-manager";
@@ -7,6 +9,8 @@ import { shouldRefreshSessionList } from "../src/application/session-list-refres
 import { deepestContainingRoot, managedWorktreeRoot } from "../src/application/repository-change-target";
 import { conflictResolutionInstruction, selectAvailableWorktreeSession, worktreeCommitInstruction } from "../src/application/worktree-session";
 import { PersistedSession, SessionStatus, attentionForStatus, isAttentionLevel, isSessionStatus } from "../src/domain/session";
+import { CodexInput } from "../src/domain/codex-input";
+import { ImageInputStore, parsePastedImages } from "../src/infrastructure/filesystem/image-input-store";
 
 class MemoryRepository implements SessionRepository {
   public value: PersistedSession[] = [];
@@ -28,6 +32,22 @@ test("repository changes select the deepest matching worktree", () => {
   assert.equal(managedWorktreeRoot(path.join(group, "src", "index.ts"), group), undefined);
 });
 
+test("pasted images are validated, stored, and removed", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-images-"));
+  try {
+    const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const images = parsePastedImages([{ mimeType: "image/png", dataUrl: `data:image/png;base64,${pngHeader.toString("base64")}` }]);
+    assert.equal(images?.length, 1);
+    const store = new ImageInputStore(root);
+    const paths = await store.save(images!);
+    assert.deepEqual(await fs.readFile(paths[0]), pngHeader);
+    await store.remove(paths);
+    await assert.rejects(() => fs.access(paths[0]));
+    assert.equal(parsePastedImages([{ mimeType: "image/gif", dataUrl: "data:image/gif;base64,AA==" }]), undefined);
+    await assert.rejects(() => store.save([{ mimeType: "image/png", dataUrl: "data:image/png;base64,aGVsbG8=" }]));
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
 class FakeGateway implements CodexGateway {
   private eventListener?: (event: AppServerEvent) => void;
   private requestListener?: (request: AppServerRequest) => void;
@@ -35,18 +55,22 @@ class FakeGateway implements CodexGateway {
   public readonly responses: Array<{ id: string | number; result: unknown }> = [];
   public readonly steers: Array<{ threadId: string; turnId: string; text: string }> = [];
   public readonly turns: Array<{ threadId: string; text: string }> = [];
+  public readonly turnInputs: CodexInput[][] = [];
+  public readonly steerInputs: CodexInput[][] = [];
   public starts = 0;
   public resumes = 0;
   public async start(): Promise<void> { this.starts += 1; }
   public async stop(): Promise<void> {}
   public async startThread(): Promise<{ threadId: string }> { return { threadId: "thread-1" }; }
   public async resumeThread(): Promise<void> { this.resumes += 1; }
-  public async startTurn(threadId: string, text: string): Promise<{ turnId?: string }> {
-    this.turns.push({ threadId, text });
+  public async startTurn(threadId: string, input: readonly CodexInput[]): Promise<{ turnId?: string }> {
+    this.turnInputs.push([...input]);
+    this.turns.push({ threadId, text: input.find((item) => item.type === "text")?.text ?? "" });
     return { turnId: `turn-${this.turns.length}` };
   }
-  public async steerTurn(threadId: string, turnId: string, text: string): Promise<void> {
-    this.steers.push({ threadId, turnId, text });
+  public async steerTurn(threadId: string, turnId: string, input: readonly CodexInput[]): Promise<void> {
+    this.steerInputs.push([...input]);
+    this.steers.push({ threadId, turnId, text: input.find((item) => item.type === "text")?.text ?? "" });
   }
   public async interruptTurn(): Promise<void> {}
   public async readAccount() { return { account: null, requiresOpenaiAuth: true }; }
@@ -674,6 +698,20 @@ test("attaching an issue steers an active session and persists the relationship"
   assert.equal(gateway.steers.at(-1)?.text, "Handle issue #18");
   assert.equal(manager.get(session.id)?.relatedIssues[0]?.number, 18);
   assert.equal(repository.value[0]?.relatedIssues?.[0]?.repository, "KayD0/agent-hub");
+});
+
+test("sending an image adds a localImage input and supplies fallback text", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const session = await manager.createSession("C:\\work\\agent-link");
+
+  await manager.sendMessage(session.id, "", ["C:\\temp\\screenshot.png"]);
+
+  assert.deepEqual(gateway.turnInputs[0], [
+    { type: "text", text: "添付画像を確認してください。" },
+    { type: "localImage", path: "C:\\temp\\screenshot.png" },
+  ]);
 });
 
 test("linking an issue to a newly started session does not send the instruction twice", async () => {

@@ -5,6 +5,16 @@
   const auditBody = document.querySelector("#audit-panel tbody");
   const activityNodes = new Map();
   const auditNodes = new Map();
+  let images = [];
+
+  function drawImages() {
+    let container = byId("message-images");
+    if (!container) { container = document.createElement("div"); container.id = "message-images"; container.setAttribute("aria-label", "添付画像"); byId("message-form").prepend(container); }
+    container.replaceChildren(...images.map((image, index) => { const item = document.createElement("span"); item.className = "message-image"; const preview = document.createElement("canvas"); preview.width = 96; preview.height = 64; preview.setAttribute("aria-label", `添付画像${index + 1}のサムネイル`); createImageBitmap(image.file).then((bitmap) => { const scale = Math.min(preview.width / bitmap.width, preview.height / bitmap.height); const width = bitmap.width * scale; const height = bitmap.height * scale; preview.getContext("2d").drawImage(bitmap, (preview.width - width) / 2, (preview.height - height) / 2, width, height); bitmap.close(); }); const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×"; remove.setAttribute("aria-label", `添付画像${index + 1}を削除`); remove.onclick = () => { images.splice(index, 1); drawImages(); }; item.append(preview, remove); return item; }));
+    container.hidden = !images.length;
+  }
+
+  function imageData(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ mimeType: file.type, dataUrl: reader.result, file }); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); }); }
 
   function reconcile(container, items, nodes, tag) {
     const active = new Set(items.map((item) => item.key));
@@ -43,7 +53,8 @@
   activateTab(["activity", "audit"].includes(savedTab) ? savedTab : "activity");
 
   const form = byId("message-form"); const input = byId("message");
-  form.addEventListener("submit", (event) => { event.preventDefault(); if (!input.value.trim()) return; vscode.postMessage({ type: "send", text: input.value }); input.value = ""; });
+  form.addEventListener("submit", (event) => { event.preventDefault(); if (!input.value.trim() && !images.length) return; const message = { type: "send", text: input.value }; if (images.length) message.images = images.map(({ mimeType, dataUrl }) => ({ mimeType, dataUrl })); vscode.postMessage(message); input.value = ""; images = []; drawImages(); });
+  input.addEventListener("paste", async (event) => { const files = [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file" && ["image/png", "image/jpeg"].includes(item.type)).map((item) => item.getAsFile()).filter(Boolean); if (!files.length) return; event.preventDefault(); if (images.length + files.length > 4 || files.some((file) => file.size > 10 * 1024 * 1024)) { window.alert("画像はPNG/JPEG、1枚10MB以内、一度に4枚までです。"); return; } images.push(...await Promise.all(files.map(imageData))); drawImages(); });
   input.addEventListener("keydown", (event) => { if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return; event.preventDefault(); form.requestSubmit(); });
   byId("interrupt").addEventListener("click", () => vscode.postMessage({ type: "interrupt" }));
   byId("attention").addEventListener("click", (event) => { const button = event.target.closest?.("[data-decision]"); if (button) vscode.postMessage({ type: "approval", decision: button.dataset.decision }); });

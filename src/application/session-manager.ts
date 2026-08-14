@@ -16,6 +16,7 @@ import {
   evaluateAutoApproval,
 } from "../domain/approval-policy";
 import { AppServerEvent, AppServerRequest, CodexGateway, SessionRepository } from "./ports";
+import { CodexInput } from "../domain/codex-input";
 
 const MAX_ACTIVITIES = 500;
 const MAX_APPROVAL_AUDIT_ENTRIES = 200;
@@ -147,7 +148,7 @@ export class SessionManager {
     await this.persist();
     if (!prompt) return session;
     try {
-      const result = await this.gateway.startTurn(threadId, prompt);
+      const result = await this.gateway.startTurn(threadId, messageInput(prompt));
       session.currentTurnId = result.turnId;
       this.setStatus(session, "running", "Codexが処理中です");
       return session;
@@ -157,19 +158,19 @@ export class SessionManager {
     }
   }
 
-  public async steer(sessionId: string, text: string): Promise<void> {
+  public async steer(sessionId: string, text: string, imagePaths: readonly string[] = []): Promise<void> {
     const session = this.requireSession(sessionId);
     if (!session.currentTurnId) throw new Error("実行中のターンがありません。");
-    await this.gateway.steerTurn(session.threadId, session.currentTurnId, text);
+    await this.gateway.steerTurn(session.threadId, session.currentTurnId, messageInput(text, imagePaths));
     session.lastInstruction = text;
     this.appendActivity(session, "message", "追加入力", text);
     this.setStatus(session, "running", "追加入力を処理中です");
   }
 
-  public async sendMessage(sessionId: string, text: string): Promise<void> {
+  public async sendMessage(sessionId: string, text: string, imagePaths: readonly string[] = []): Promise<void> {
     const session = this.requireSession(sessionId);
     if (session.currentTurnId) {
-      await this.steer(sessionId, text);
+      await this.steer(sessionId, text, imagePaths);
       return;
     }
 
@@ -177,7 +178,7 @@ export class SessionManager {
     this.appendActivity(session, "message", "追加指示", text);
     this.setStatus(session, "starting", "新しいターンを開始しています");
     try {
-      const result = await this.gateway.startTurn(session.threadId, text);
+      const result = await this.gateway.startTurn(session.threadId, messageInput(text, imagePaths));
       session.currentTurnId = result.turnId;
       this.setStatus(session, "running", "Codexが処理中です");
     } catch (error) {
@@ -687,6 +688,11 @@ function titleFromPath(cwd: string): string {
 function compact(value: string, length: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   return normalized.length <= length ? normalized : `${normalized.slice(0, length - 1)}…`;
+}
+
+function messageInput(text: string, imagePaths: readonly string[] = []): CodexInput[] {
+  const normalized = text.trim() || "添付画像を確認してください。";
+  return [{ type: "text", text: normalized }, ...imagePaths.map((imagePath): CodexInput => ({ type: "localImage", path: imagePath }))];
 }
 
 function isInside(candidate: string, root: string): boolean {

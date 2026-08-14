@@ -17,9 +17,26 @@ async function createWebview() {
   const dom = new JSDOM(`<!doctype html><body><header><h1 id="title"></h1><button id="interrupt"></button><span id="status"></span><span id="current-activity"></span><p id="cwd"></p></header><div id="attention"></div><form id="message-form"><textarea id="message"></textarea><button type="submit">送信</button></form><div role="tablist"><button id="activity-tab" role="tab" data-tab="activity" aria-controls="activity-panel"></button><button id="audit-tab" role="tab" data-tab="audit" aria-controls="audit-panel"></button></div><section id="activity-panel"><p class="empty"></p></section><section id="audit-panel"><table><tbody></tbody></table><p class="empty"></p></section></body>`, { runScripts: "outside-only", url: "https://agenthub.test/", pretendToBeVisual: true });
   let state: unknown;
   Object.defineProperty(dom.window, "acquireVsCodeApi", { value: () => ({ postMessage: (message: PostedMessage) => posted.push(message), getState: () => state, setState: (value: unknown) => { state = value; } }) });
+  Object.defineProperty(dom.window, "createImageBitmap", { value: async () => ({ width: 100, height: 80, close() {} }) });
+  dom.window.HTMLCanvasElement.prototype.getContext = (() => ({ drawImage() {} })) as unknown as typeof dom.window.HTMLCanvasElement.prototype.getContext;
   dom.window.eval(await readFile(path.resolve("media/session-detail.js"), "utf8"));
   return { dom, posted };
 }
+
+test("detail image paste shows a removable thumbnail and sends the image", async (context) => {
+  const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  const input = dom.window.document.querySelector<HTMLTextAreaElement>("#message")!;
+  const file = new dom.window.File(["png"], "shot.png", { type: "image/png" });
+  const paste = new dom.window.Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { items: [{ kind: "file", type: file.type, getAsFile: () => file }] } });
+  input.dispatchEvent(paste);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(dom.window.document.querySelectorAll("#message-images canvas").length, 1);
+  assert.equal(dom.window.document.querySelectorAll("#message-images button").length, 1);
+  input.closest("form")!.dispatchEvent(new dom.window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+  assert.equal((posted.at(-1) as PostedMessage & { images?: unknown[] }).images?.length, 1);
+});
 
 function update(dom: JSDOM, session: ReturnType<typeof detail>) {
   dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "sessionDetail", session } }));
