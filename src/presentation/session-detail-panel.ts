@@ -7,7 +7,8 @@ import { conflictResolutionInstruction, worktreeCommitInstruction } from "../app
 import { ManagedSession, SessionActivity } from "../domain/session";
 import { WorktreeMergeManager } from "../infrastructure/git/worktree-merge-manager";
 import { renderMarkdown } from "./markdown-renderer";
-import { ImageInputStore, parsePastedImages } from "../infrastructure/filesystem/image-input-store";
+import { parsePastedImages } from "../infrastructure/filesystem/image-input-store";
+import { SessionImageInputCoordinator } from "./session-image-input-coordinator";
 
 const UPDATE_DELAY_MS = 80;
 const URGENT_STATUSES = new Set(["waiting_for_approval", "waiting_for_input", "completed", "failed", "interrupted"]);
@@ -50,7 +51,7 @@ export class SessionDetailPanel implements vscode.Disposable {
     private readonly worktreeMerges: WorktreeMergeManager,
     private readonly openRepositoryChanges: (groupId: string, repositoryId: string) => Promise<void>,
     private readonly extensionUri: vscode.Uri,
-    private readonly imageInputs: ImageInputStore,
+    private readonly imageInputs: SessionImageInputCoordinator,
     private readonly onError: (error: unknown) => void,
   ) {
     this.subscription = manager.onDidChange((change) => this.refreshChanged(change));
@@ -92,9 +93,7 @@ export class SessionDetailPanel implements vscode.Disposable {
       if (message.type === "send" && typeof message.text === "string") {
         const images = parsePastedImages(message.images);
         if (!images || (!message.text.trim() && !images.length)) return;
-        const paths = await this.imageInputs.save(images);
-        try { await this.manager.sendMessage(sessionId, message.text.trim(), paths); }
-        finally { await this.imageInputs.remove(paths); }
+        await this.imageInputs.sendMessage(sessionId, message.text.trim(), images);
       }
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);
       else if (message.type === "approval" && isDecision(message.decision)) this.manager.resolveApproval(sessionId, message.decision);

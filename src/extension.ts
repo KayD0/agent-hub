@@ -28,6 +28,7 @@ import { CompetitiveAnalysisFocus, FolderAnalysisCandidate, FolderAnalysisDepth,
 import { collectEnvironmentDiagnostics } from "./infrastructure/system/environment-diagnostics";
 import { redactSensitive } from "./infrastructure/vscode/file-logger";
 import { ImageInputStore } from "./infrastructure/filesystem/image-input-store";
+import { SessionImageInputCoordinator } from "./presentation/session-image-input-coordinator";
 
 let manager: SessionManager | undefined;
 let logger: FileLogger | undefined;
@@ -149,8 +150,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }, showError);
   const integrationService = new WorktreeIntegrationService(repositoryManager, manager, worktreeMerges);
   const integrationPanel = new IntegrationPanel(repositoryManager, manager, integrationService, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), showError);
-  const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), context.extensionUri, imageInputs, showError);
-  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), (sessionId) => folderAnalysisPanel.showSession(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, imageInputs, showError);
+  const sessionImageInputs = new SessionImageInputCoordinator(manager, imageInputs);
+  context.subscriptions.push(sessionImageInputs);
+  const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), context.extensionUri, sessionImageInputs, showError);
+  const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), (sessionId) => folderAnalysisPanel.showSession(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, sessionImageInputs, showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {
     const selected = candidate ? [candidate] : await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "フォルダを登録" });

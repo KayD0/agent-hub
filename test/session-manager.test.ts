@@ -11,6 +11,7 @@ import { conflictResolutionInstruction, selectAvailableWorktreeSession, worktree
 import { PersistedSession, SessionStatus, attentionForStatus, isAttentionLevel, isSessionStatus } from "../src/domain/session";
 import { CodexInput } from "../src/domain/codex-input";
 import { ImageInputStore, parsePastedImages } from "../src/infrastructure/filesystem/image-input-store";
+import { SessionImageInputCoordinator } from "../src/presentation/session-image-input-coordinator";
 
 class MemoryRepository implements SessionRepository {
   public value: PersistedSession[] = [];
@@ -47,6 +48,43 @@ test("pasted images are validated, stored, and removed", async () => {
     await assert.rejects(() => store.save([{ mimeType: "image/png", dataUrl: "data:image/png;base64,aGVsbG8=" }]));
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test("pasted images remain available until the turn completes", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-images-"));
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  const store = new ImageInputStore(root);
+  const coordinator = new SessionImageInputCoordinator(manager, store);
+  try {
+    await manager.initialize();
+    const session = await manager.createSession("C:\\work");
+    const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    await coordinator.sendMessage(session.id, "Inspect this", [{
+      mimeType: "image/png",
+      dataUrl: `data:image/png;base64,${pngHeader.toString("base64")}`,
+    }]);
+
+    const image = gateway.turnInputs.at(-1)?.find((item) => item.type === "localImage");
+    assert.equal(image?.type, "localImage");
+    await fs.access(image!.path);
+
+    gateway.emitEvent({ method: "turn/completed", params: { threadId: session.threadId, turn: { id: "turn-1", status: "completed" } } });
+    await assertFileRemoved(image!.path);
+  } finally {
+    coordinator.dispose();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+async function assertFileRemoved(target: string): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try { await fs.access(target); }
+    catch { return; }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`Expected file to be removed: ${target}`);
+}
 
 class FakeGateway implements CodexGateway {
   private eventListener?: (event: AppServerEvent) => void;

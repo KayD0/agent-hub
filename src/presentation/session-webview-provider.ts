@@ -6,7 +6,8 @@ import { shouldRefreshSessionList } from "../application/session-list-refresh";
 import { AuthenticationState } from "../domain/authentication";
 import { ManagedSession } from "../domain/session";
 import { isStringArray, parseAnswers } from "./webview-messages";
-import { ImageInputStore, parsePastedImages } from "../infrastructure/filesystem/image-input-store";
+import { parsePastedImages } from "../infrastructure/filesystem/image-input-store";
+import { SessionImageInputCoordinator } from "./session-image-input-coordinator";
 
 type SessionViewModel = Pick<ManagedSession, "id" | "title" | "status" | "currentActivity" | "finalResult" | "lastInstruction" | "origin" | "relatedIssues" | "autoApprove" | "unrestrictedAutoApprove" | "pendingInteraction"> & { repositoryGroupIds: string[] };
 type RepositoryGroupFilter = { id: string; name: string; rootPath: string };
@@ -38,7 +39,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     private readonly listRepositoryGroups: () => readonly RepositoryGroupFilter[],
     private readonly state: vscode.Memento,
     private readonly extensionUri: vscode.Uri,
-    private readonly imageInputs: ImageInputStore,
+    private readonly imageInputs: SessionImageInputCoordinator,
     private readonly showError: (error: unknown) => void,
   ) {
     this.selectedRepositoryGroupIds = new Set(state.get<string[]>(SessionWebviewProvider.repositoryFilterKey, []));
@@ -192,9 +193,7 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
       if (message.type === "send" && typeof message.text === "string") {
         const images = parsePastedImages(message.images);
         if (!images || (!message.text.trim() && !images.length)) return;
-        const paths = await this.imageInputs.save(images);
-        try { await this.manager.sendMessage(sessionId, message.text.trim(), paths); }
-        finally { await this.imageInputs.remove(paths); }
+        await this.imageInputs.sendMessage(sessionId, message.text.trim(), images);
       }
       else if (message.type === "autoApprove" && typeof message.enabled === "boolean") this.manager.setAutoApprove(sessionId, message.enabled);
       else if (message.type === "unrestrictedAutoApprove" && typeof message.enabled === "boolean") {
