@@ -296,6 +296,10 @@ export class SessionManager {
     for (const session of this.sessions.values()) this.setAutoApprove(session.id, enabled);
   }
 
+  public setAllUnrestrictedAutoApprove(enabled: boolean): void {
+    for (const session of this.sessions.values()) this.setUnrestrictedAutoApprove(session.id, enabled);
+  }
+
   public resolveInput(sessionId: string, answers: Record<string, string[]>): void {
     const session = this.requireSession(sessionId);
     const pending = session.pendingInteraction;

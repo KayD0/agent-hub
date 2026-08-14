@@ -90,6 +90,16 @@
         "icon": "$(pass-filled)"
       },
       {
+        "command": "agentHub.enableBulkUnrestrictedAuto",
+        "title": "一括無制限Autoを有効にする",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "agentHub.disableBulkUnrestrictedAuto",
+        "title": "一括無制限Autoを無効にする",
+        "icon": "$(pass-filled)"
+      },
+      {
         "command": "agentHub.openSession",
         "title": "AgentHub: セッション詳細を開く"
       },
@@ -167,6 +177,16 @@
           "command": "agentHub.disableBulkAuto",
           "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && agentHub.bulkAutoEnabled",
           "group": "navigation@4"
+        },
+        {
+          "command": "agentHub.enableBulkUnrestrictedAuto",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && !agentHub.bulkUnrestrictedAutoEnabled",
+          "group": "navigation@5"
+        },
+        {
+          "command": "agentHub.disableBulkUnrestrictedAuto",
+          "when": "view == agentHub.sessions && agentHub.authenticationStatus == authenticated && agentHub.bulkUnrestrictedAutoEnabled",
+          "group": "navigation@5"
         },
         {
           "command": "agentHub.addRepository",

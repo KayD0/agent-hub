@@ -352,6 +352,27 @@ test("normal and unrestricted auto modes are mutually exclusive", async () => {
   assert.equal(manager.get(session.id)?.unrestrictedAutoApprove, false);
 });
 
+test("bulk unrestricted auto mode updates all sessions and disables normal auto", async () => {
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  await manager.initialize();
+  const first = await manager.createSession("C:\\work\\first");
+  const second = await manager.createSession("C:\\work\\second");
+  manager.setAllAutoApprove(true);
+
+  manager.setAllUnrestrictedAutoApprove(true);
+
+  assert.equal(manager.get(first.id)?.unrestrictedAutoApprove, true);
+  assert.equal(manager.get(first.id)?.autoApprove, false);
+  assert.equal(manager.get(second.id)?.unrestrictedAutoApprove, true);
+  assert.equal(manager.get(second.id)?.autoApprove, false);
+
+  manager.setAllUnrestrictedAutoApprove(false);
+
+  assert.equal(manager.get(first.id)?.unrestrictedAutoApprove, false);
+  assert.equal(manager.get(second.id)?.unrestrictedAutoApprove, false);
+});
+
 test("bulk approval accepts only requests that match the safety policy", async () => {
   const gateway = new FakeGateway();
   const repository = new MemoryRepository();

@@ -265,6 +265,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.filterSessionsByRepository", () => sessionsView.selectRepositoryGroups()),
     vscode.commands.registerCommand("agentHub.enableBulkAuto", () => sessionsView.setAllAutoApprove(true)),
     vscode.commands.registerCommand("agentHub.disableBulkAuto", () => sessionsView.setAllAutoApprove(false)),
+    vscode.commands.registerCommand("agentHub.enableBulkUnrestrictedAuto", () => sessionsView.setAllUnrestrictedAutoApprove(true)),
+    vscode.commands.registerCommand("agentHub.disableBulkUnrestrictedAuto", () => sessionsView.setAllUnrestrictedAutoApprove(false)),
     vscode.commands.registerCommand("agentHub.openSession", (node: { sessionId: string }) => detailPanel.show(node.sessionId)),
     vscode.commands.registerCommand("agentHub.addRepository", (candidate?: vscode.Uri) => addRepository(candidate)),
     vscode.commands.registerCommand("agentHub.openRepositoryChanges", (repositoryId?: string) => repositoryId ? repositoryDiffPanel.show(repositoryId) : repositoriesView.refresh()),

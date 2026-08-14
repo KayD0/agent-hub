@@ -110,6 +110,19 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
     this.updateTitleContexts(this.listRepositoryGroups().length > 0);
   }
 
+  public async setAllUnrestrictedAutoApprove(enabled: boolean): Promise<void> {
+    if (enabled) {
+      const answer = await vscode.window.showWarningMessage(
+        "すべての既存セッションで無制限Autoを有効にします。削除・外部送信・セッション外のファイル変更を含むすべての承認要求が、安全ポリシーなしで自動承認されます。",
+        { modal: true },
+        "すべて無制限Autoにする",
+      );
+      if (answer !== "すべて無制限Autoにする") return;
+    }
+    this.manager.setAllUnrestrictedAutoApprove(enabled);
+    this.updateTitleContexts(this.listRepositoryGroups().length > 0);
+  }
+
   private updateAuthenticationChrome(): void {
     const state = this.authentication.getState();
     if (this.view) this.view.description = authenticationDescription(state);
@@ -119,9 +132,11 @@ export class SessionWebviewProvider implements vscode.WebviewViewProvider, vscod
   private updateTitleContexts(hasRepositoryGroups: boolean): void {
     const sessions = this.manager.list();
     const allAutoEnabled = sessions.length > 0 && sessions.every((session) => session.autoApprove);
+    const allUnrestrictedAutoEnabled = sessions.length > 0 && sessions.every((session) => session.unrestrictedAutoApprove);
     void vscode.commands.executeCommand("setContext", "agentHub.hasRepositoryGroups", hasRepositoryGroups);
     void vscode.commands.executeCommand("setContext", "agentHub.repositoryFilterActive", this.selectedRepositoryGroupIds.size > 0);
     void vscode.commands.executeCommand("setContext", "agentHub.bulkAutoEnabled", allAutoEnabled);
+    void vscode.commands.executeCommand("setContext", "agentHub.bulkUnrestrictedAutoEnabled", allUnrestrictedAutoEnabled);
   }
 
   private snapshot(): SessionViewModel[] {
