@@ -6,6 +6,7 @@
   const activityNodes = new Map();
   const auditNodes = new Map();
   let images = [];
+  let canInterrupt = false;
 
   function drawImages() {
     let container = byId("message-images");
@@ -34,6 +35,7 @@
     byId("status").textContent = session.status;
     byId("current-activity").textContent = session.currentActivity;
     byId("cwd").textContent = session.cwd;
+    canInterrupt = session.canInterrupt;
     byId("interrupt").hidden = !session.canInterrupt;
     const attention = byId("attention");
     if (attention.dataset.html !== session.attentionHtml) { attention.dataset.html = session.attentionHtml; attention.innerHTML = session.attentionHtml; }
@@ -57,6 +59,11 @@
   input.addEventListener("paste", async (event) => { const files = [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file" && ["image/png", "image/jpeg"].includes(item.type)).map((item) => item.getAsFile()).filter(Boolean); if (!files.length) return; event.preventDefault(); if (images.length + files.length > 4 || files.some((file) => file.size > 10 * 1024 * 1024)) { window.alert("画像はPNG/JPEG、1枚10MB以内、一度に4枚までです。"); return; } images.push(...await Promise.all(files.map(imageData))); drawImages(); });
   input.addEventListener("keydown", (event) => { if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return; event.preventDefault(); form.requestSubmit(); });
   byId("interrupt").addEventListener("click", () => vscode.postMessage({ type: "interrupt" }));
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.isComposing || event.keyCode === 229 || !canInterrupt) return;
+    event.preventDefault();
+    vscode.postMessage({ type: "interrupt" });
+  });
   byId("attention").addEventListener("click", (event) => { const button = event.target.closest?.("[data-decision]"); if (button) vscode.postMessage({ type: "approval", decision: button.dataset.decision }); });
   window.addEventListener("message", (event) => { if (event.data?.type === "sessionDetail") update(event.data.session); });
   vscode.postMessage({ type: "ready" });

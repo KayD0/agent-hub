@@ -83,6 +83,20 @@ test("detail send contract preserves IME composition", async (context) => {
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "send", text: "日本語" }));
 });
 
+test("Escape interrupts only an interruptible detail session", async (context) => {
+  const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  update(dom, detail({ canInterrupt: true }));
+
+  dom.window.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "interrupt" }));
+
+  update(dom, detail({ status: "completed", canInterrupt: false }));
+  const count = posted.length;
+  dom.window.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  dom.window.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true }));
+  assert.equal(posted.length, count);
+});
+
 test("session detail does not render repository integration controls", async (context) => {
   const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
   assert.equal(dom.window.document.querySelector("#merge-tab"), null);

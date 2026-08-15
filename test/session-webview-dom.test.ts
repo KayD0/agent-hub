@@ -219,6 +219,22 @@ test("session details open from the card without a dedicated button", async (con
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "open", sessionId: "one" }));
 });
 
+test("Escape interrupts the focused running session", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one"), session("two")]);
+  const firstInput = dom.window.document.querySelector<HTMLTextAreaElement>('[data-session-id="one"] textarea')!;
+
+  firstInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "interrupt", sessionId: "one" }));
+
+  update(dom, [session("one", { status: "completed" }), session("two")]);
+  const count = posted.length;
+  firstInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  firstInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true }));
+  assert.equal(posted.length, count);
+});
+
 test("card image paste shows only a paperclip count and sends the image", async (context) => {
   const { dom, posted } = await createWebview();
   context.after(() => dom.window.close());

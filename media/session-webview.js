@@ -22,6 +22,7 @@
   let draggedSessionId;
   let composingSessionId;
   const maxImages = 4;
+  const interruptibleStatuses = new Set(["starting", "running", "waiting_for_input"]);
 
   function pastedImages(event) {
     return [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file" && ["image/png", "image/jpeg"].includes(item.type)).map((item) => item.getAsFile()).filter(Boolean);
@@ -49,6 +50,11 @@
 
   function sessionFor(card) {
     return sessionsById.get(card.dataset.sessionId);
+  }
+
+  function interruptSession(sessionId) {
+    const session = sessionsById.get(sessionId);
+    if (session && interruptibleStatuses.has(session.status)) vscode.postMessage({ type: "interrupt", sessionId });
   }
 
   function ensureGrid() {
@@ -315,7 +321,7 @@
       unrestrictedCheckbox.addEventListener("change", () => vscode.postMessage({ type: "unrestrictedAutoApprove", sessionId: card.dataset.sessionId, enabled: unrestrictedCheckbox.checked }));
       unrestrictedAuto.append(unrestrictedCheckbox, document.createTextNode("無制限Auto"));
       if (["starting", "running", "waiting_for_input"].includes(session.status)) {
-        const interrupt = button("中断", "処理を中断", () => vscode.postMessage({ type: "interrupt", sessionId: card.dataset.sessionId }), true);
+        const interrupt = button("中断", "処理を中断 (Esc)", () => interruptSession(card.dataset.sessionId), true);
         interrupt.classList.add("header-action");
         container.append(interrupt);
       }
@@ -334,6 +340,17 @@
     unrestrictedCheckbox.setAttribute("aria-label", session.title + "の無制限Auto承認");
     card.dataset.unrestrictedAuto = session.unrestrictedAutoApprove ? "true" : "false";
   }
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.isComposing || event.keyCode === 229 || composingSessionId) return;
+    const focusedCard = event.target.closest?.(".session");
+    const candidates = focusedCard
+      ? [sessionFor(focusedCard)].filter(Boolean)
+      : sessions.filter((session) => interruptibleStatuses.has(session.status));
+    if (candidates.length !== 1 || !interruptibleStatuses.has(candidates[0].status)) return;
+    event.preventDefault();
+    interruptSession(candidates[0].id);
+  });
 
   function updateInstruction(card, session) {
     const node = card.querySelector(".last-instruction");
