@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
-interface PostedMessage { type: string; text?: string; decision?: string; candidateId?: string; candidateIds?: string[] }
+interface PostedMessage { type: string; text?: string; decision?: string; candidateId?: string; candidateIds?: string[]; templateId?: string }
 interface DetailItem { key: string; html: string }
 
 function detail(overrides: Record<string, unknown> = {}) {
@@ -95,6 +95,34 @@ test("Escape interrupts only an interruptible detail session", async (context) =
   dom.window.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   dom.window.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true }));
   assert.equal(posted.length, count);
+});
+
+test("message templates are grouped, inserted, saved, and custom templates can be deleted", async (context) => {
+  const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  update(dom, detail({ promptTemplates: [
+    { id: "builtin:design", category: "デザイン", name: "調査", text: "Figmaを調査", builtIn: true },
+    { id: "custom:review", category: "レビュー", name: "確認", text: "差分を確認", builtIn: false },
+  ] }));
+  const document = dom.window.document;
+  const select = document.querySelector<HTMLSelectElement>("#prompt-template")!;
+  assert.deepEqual([...select.querySelectorAll("optgroup")].map((group) => group.label), ["デザイン", "レビュー"]);
+  select.value = "custom:review";
+  select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  assert.equal(document.querySelector<HTMLTextAreaElement>("#message")!.value, "差分を確認");
+  assert.equal(document.querySelector<HTMLButtonElement>("#delete-template")!.disabled, false);
+  assert.equal(document.querySelector<HTMLButtonElement>("#rename-template")!.disabled, false);
+  document.querySelector<HTMLButtonElement>("#rename-template")!.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "renameTemplate", templateId: "custom:review" }));
+  document.querySelector<HTMLButtonElement>("#save-template")!.click();
+  assert.equal(document.querySelector<HTMLButtonElement>("#save-template")!.textContent, "上書き保存");
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "saveTemplate", text: "差分を確認", templateId: "custom:review" }));
+  document.querySelector<HTMLButtonElement>("#delete-template")!.click();
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "deleteTemplate", templateId: "custom:review" }));
+  select.value = "builtin:design";
+  select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  assert.equal(document.querySelector<HTMLButtonElement>("#delete-template")!.disabled, false);
+  assert.equal(document.querySelector<HTMLButtonElement>("#rename-template")!.disabled, true);
+  assert.equal(document.querySelector<HTMLButtonElement>("#save-template")!.textContent, "現在の本文を保存");
 });
 
 test("session detail does not render repository integration controls", async (context) => {

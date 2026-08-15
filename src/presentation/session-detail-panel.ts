@@ -9,6 +9,7 @@ import { WorktreeMergeManager } from "../infrastructure/git/worktree-merge-manag
 import { renderMarkdown } from "./markdown-renderer";
 import { parsePastedImages } from "../infrastructure/filesystem/image-input-store";
 import { SessionImageInputCoordinator } from "./session-image-input-coordinator";
+import { PromptTemplateStore } from "../infrastructure/vscode/prompt-template-store";
 
 const UPDATE_DELAY_MS = 80;
 const URGENT_STATUSES = new Set(["waiting_for_approval", "waiting_for_input", "completed", "failed", "interrupted"]);
@@ -52,6 +53,7 @@ export class SessionDetailPanel implements vscode.Disposable {
     private readonly openRepositoryChanges: (groupId: string, repositoryId: string) => Promise<void>,
     private readonly extensionUri: vscode.Uri,
     private readonly imageInputs: SessionImageInputCoordinator,
+    private readonly promptTemplates: PromptTemplateStore,
     private readonly onError: (error: unknown) => void,
   ) {
     this.subscription = manager.onDidChange((change) => this.refreshChanged(change));
@@ -87,13 +89,52 @@ export class SessionDetailPanel implements vscode.Disposable {
 
   private async handleMessage(sessionId: string, state: PanelState, value: unknown): Promise<void> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
-    const message = value as { type?: unknown; text?: unknown; images?: unknown; decision?: unknown; candidateId?: unknown; candidateIds?: unknown };
+    const message = value as { type?: unknown; text?: unknown; images?: unknown; decision?: unknown; candidateId?: unknown; candidateIds?: unknown; templateId?: unknown };
     if (message.type === "ready") { this.postUpdate(sessionId, state, true); await this.refreshMergeQueue(sessionId, state); return; }
     try {
       if (message.type === "send" && typeof message.text === "string") {
         const images = parsePastedImages(message.images);
         if (!images || (!message.text.trim() && !images.length)) return;
         await this.imageInputs.sendMessage(sessionId, message.text.trim(), images);
+      }
+      else if (message.type === "saveTemplate" && typeof message.text === "string") {
+        if (typeof message.templateId === "string") {
+          const overwritten = await this.promptTemplates.overwrite(message.templateId, message.text);
+          if (overwritten) {
+            this.postUpdate(sessionId, state, true);
+            void state.panel.webview.postMessage({ type: "templateSelected", templateId: overwritten.id });
+            void vscode.window.showInformationMessage(`テンプレート「${overwritten.name}」を上書きしました。`);
+            return;
+          }
+        }
+        const category = await vscode.window.showInputBox({ title: "テンプレートを保存", prompt: "カテゴリ", placeHolder: "例: デザイン、レビュー、調査", ignoreFocusOut: true });
+        if (category === undefined) return;
+        const name = await vscode.window.showInputBox({ title: "テンプレートを保存", prompt: "テンプレート名", placeHolder: "例: Figmaデザイン調査", ignoreFocusOut: true });
+        if (name === undefined) return;
+        const template = await this.promptTemplates.save(category, name, message.text);
+        this.postUpdate(sessionId, state, true);
+        void state.panel.webview.postMessage({ type: "templateSelected", templateId: template.id });
+        void vscode.window.showInformationMessage(`テンプレート「${template.name}」を保存しました。`);
+      }
+      else if (message.type === "deleteTemplate" && typeof message.templateId === "string") {
+        const template = this.promptTemplates.list().find((item) => item.id === message.templateId);
+        if (!template) return;
+        const answer = await vscode.window.showWarningMessage(`テンプレート「${template.name}」を削除しますか？`, { modal: true }, "削除");
+        if (answer !== "削除") return;
+        await this.promptTemplates.remove(template.id);
+        this.postUpdate(sessionId, state, true);
+      }
+      else if (message.type === "renameTemplate" && typeof message.templateId === "string") {
+        const template = this.promptTemplates.list().find((item) => item.id === message.templateId && !item.builtIn);
+        if (!template) return;
+        const category = await vscode.window.showInputBox({ title: "テンプレート名を変更", prompt: "カテゴリ", value: template.category, ignoreFocusOut: true });
+        if (category === undefined) return;
+        const name = await vscode.window.showInputBox({ title: "テンプレート名を変更", prompt: "テンプレート名", value: template.name, ignoreFocusOut: true });
+        if (name === undefined) return;
+        const renamed = await this.promptTemplates.rename(template.id, category, name);
+        if (!renamed) return;
+        this.postUpdate(sessionId, state, true);
+        void state.panel.webview.postMessage({ type: "templateSelected", templateId: renamed.id });
       }
       else if (message.type === "interrupt") await this.manager.interrupt(sessionId);
       else if (message.type === "approval" && isDecision(message.decision)) this.manager.resolveApproval(sessionId, message.decision);
@@ -227,7 +268,7 @@ export class SessionDetailPanel implements vscode.Disposable {
   private postUpdate(sessionId: string, state: PanelState, force = false): void {
     const session = this.manager.get(sessionId);
     if (!session) { state.panel.dispose(); return; }
-    const snapshot = detailSnapshot(session, state.renderCache);
+    const snapshot = detailSnapshot(session, state.renderCache, this.promptTemplates.list());
     const serialized = JSON.stringify(snapshot);
     state.dirty = false;
     state.lastStatus = session.status;
@@ -238,10 +279,11 @@ export class SessionDetailPanel implements vscode.Disposable {
   }
 }
 
-export function detailSnapshot(session: ManagedSession, cache: DetailRenderCache = { activityHtml: new WeakMap(), objectKeys: new WeakMap(), nextKey: 1 }) {
+export function detailSnapshot(session: ManagedSession, cache: DetailRenderCache = { activityHtml: new WeakMap(), objectKeys: new WeakMap(), nextKey: 1 }, promptTemplates: ReturnType<PromptTemplateStore["list"]> = []) {
   return {
     id: session.id, title: session.title, status: session.status, currentActivity: session.currentActivity ?? "", cwd: session.cwd,
     canInterrupt: ["starting", "running", "waiting_for_input"].includes(session.status),
+    promptTemplates,
     attentionHtml: renderAttention(session),
     activities: session.activities.slice().reverse().map((activity) => ({
       key: objectKey(activity, cache, "activity"),
@@ -281,7 +323,9 @@ function renderAttention(session: ManagedSession): string {
 function renderShell(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const nonce = randomNonce();
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "session-detail.js"));
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}' ${webview.cspSource};"><style nonce="${nonce}">body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);padding:20px;max-width:980px;margin:auto}header{border-bottom:1px solid var(--vscode-panel-border);padding-bottom:12px}.header-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.header-title h1{margin-right:auto}.meta{color:var(--vscode-descriptionForeground);word-break:break-all}.status{display:inline-block;padding:3px 8px;border-radius:12px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}.attention{border:1px solid var(--vscode-inputValidation-warningBorder);background:var(--vscode-inputValidation-warningBackground);padding:12px;margin:16px 0}.policy-reason{color:var(--vscode-descriptionForeground)}.actions{display:flex;gap:8px;flex-wrap:wrap}button{border:0;padding:7px 12px;color:var(--vscode-button-foreground);background:var(--vscode-button-background);cursor:pointer}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground)}.message-form{display:flex;gap:8px;margin:18px 0}.message-form textarea{min-width:0;flex:1;min-height:72px;resize:vertical;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);padding:8px}.message-form button{align-self:flex-end}.tabs{display:flex;gap:2px;margin-top:4px;border-bottom:1px solid var(--vscode-panel-border)}button.tab{position:relative;padding:8px 14px;color:var(--vscode-foreground);background:transparent}button.tab[aria-selected="true"]{font-weight:600}button.tab[aria-selected="true"]::after{content:"";position:absolute;right:8px;bottom:-1px;left:8px;height:2px;background:var(--vscode-focusBorder)}.tabpanel{padding-top:8px}.tabpanel[hidden]{display:none}article{border-bottom:1px solid var(--vscode-panel-border);padding:10px 0}.activity-head{display:flex;justify-content:space-between;gap:12px}time{color:var(--vscode-descriptionForeground)}pre{white-space:pre-wrap;word-break:break-word;background:var(--vscode-textCodeBlock-background);padding:10px;overflow:auto}.audit-wrap{overflow:auto}.audit{border-collapse:collapse;width:100%;font-size:.9em}.audit th,.audit td{border:1px solid var(--vscode-panel-border);padding:6px;text-align:left;vertical-align:top}.markdown{line-height:1.55;overflow-wrap:anywhere}.markdown>:first-child{margin-top:10px}.markdown>:last-child{margin-bottom:0}.markdown h1,.markdown h2,.markdown h3{margin:18px 0 8px}.markdown h1{font-size:1.45em}.markdown h2{font-size:1.25em}.markdown h3{font-size:1.1em}.markdown p,.markdown ul,.markdown ol,.markdown blockquote{margin:8px 0}.markdown blockquote{padding-left:12px;border-left:3px solid var(--vscode-textBlockQuote-border);color:var(--vscode-descriptionForeground)}.markdown code{font-family:var(--vscode-editor-font-family);background:var(--vscode-textCodeBlock-background);padding:1px 4px;border-radius:3px}.markdown pre code{padding:0;background:transparent}.markdown a{color:var(--vscode-textLink-foreground)}.markdown table{border-collapse:collapse;max-width:100%;display:block;overflow:auto}.markdown th,.markdown td{padding:5px 8px;border:1px solid var(--vscode-panel-border)}</style></head><body><header><div class="header-title"><h1 id="title"></h1><button type="button" id="interrupt" class="secondary" title="処理を中断 (Esc)" hidden>中断</button></div><p><span class="status" id="status"></span> <span id="current-activity"></span></p><p class="meta" id="cwd"></p></header><div id="attention"></div><form class="message-form" id="message-form"><textarea id="message" aria-label="入力内容" placeholder="Codexへ追加入力...（Enterで送信、Shift+Enterで改行、Escで中断）"></textarea><button type="submit">送信</button></form><div class="tabs" role="tablist"><button class="tab" id="activity-tab" role="tab" aria-selected="true" aria-controls="activity-panel" data-tab="activity">アクティビティ</button><button class="tab" id="audit-tab" role="tab" aria-selected="false" aria-controls="audit-panel" data-tab="audit" tabindex="-1">監査ログ</button></div><section class="tabpanel" id="activity-panel" role="tabpanel"><p class="empty">アクティビティはまだありません。</p></section><section class="tabpanel" id="audit-panel" role="tabpanel" hidden><div class="audit-wrap"><table class="audit"><thead><tr><th>日時</th><th>判断</th><th>対象</th><th>理由</th><th>ルール</th></tr></thead><tbody></tbody></table><p class="empty">承認履歴はまだありません。</p></div></section><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}' ${webview.cspSource};"><style nonce="${nonce}">
+body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);padding:20px;max-width:980px;margin:auto}header{border-bottom:1px solid var(--vscode-panel-border);padding-bottom:12px}.header-title{display:flex;align-items:center;gap:12px}.header-title h1{margin-right:auto}.meta{color:var(--vscode-descriptionForeground);word-break:break-all}.status{display:inline-block;padding:3px 8px;border-radius:12px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}.attention{border:1px solid var(--vscode-inputValidation-warningBorder);background:var(--vscode-inputValidation-warningBackground);padding:12px;margin:16px 0}.policy-reason,time{color:var(--vscode-descriptionForeground)}.actions,.template-toolbar,.message-form{display:flex;gap:8px}.actions{flex-wrap:wrap}button{border:0;padding:7px 12px;color:var(--vscode-button-foreground);background:var(--vscode-button-background);cursor:pointer}button:hover{background:var(--vscode-button-hoverBackground)}button:disabled{cursor:default;opacity:.55}button.secondary{color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground)}.template-toolbar{align-items:center;margin-top:18px}.template-toolbar select{min-width:0;flex:1;padding:7px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border)}.message-form{margin:8px 0 18px}.message-form textarea{min-width:0;flex:1;min-height:72px;resize:vertical;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);padding:8px}.message-form button{align-self:flex-end}.tabs{display:flex;gap:2px;margin-top:4px;border-bottom:1px solid var(--vscode-panel-border)}button.tab{position:relative;padding:8px 14px;color:var(--vscode-foreground);background:transparent}button.tab[aria-selected="true"]{font-weight:600}button.tab[aria-selected="true"]::after{content:"";position:absolute;right:8px;bottom:-1px;left:8px;height:2px;background:var(--vscode-focusBorder)}.tabpanel{padding-top:8px}.tabpanel[hidden]{display:none}article{border-bottom:1px solid var(--vscode-panel-border);padding:10px 0}.activity-head{display:flex;justify-content:space-between;gap:12px}pre{white-space:pre-wrap;word-break:break-word;background:var(--vscode-textCodeBlock-background);padding:10px;overflow:auto}.audit-wrap{overflow:auto}.audit{border-collapse:collapse;width:100%;font-size:.9em}.audit th,.audit td{border:1px solid var(--vscode-panel-border);padding:6px;text-align:left;vertical-align:top}.markdown{line-height:1.55;overflow-wrap:anywhere}.markdown>:first-child{margin-top:10px}.markdown>:last-child{margin-bottom:0}.markdown h1,.markdown h2,.markdown h3{margin:18px 0 8px}.markdown h1{font-size:1.45em}.markdown h2{font-size:1.25em}.markdown h3{font-size:1.1em}.markdown p,.markdown ul,.markdown ol,.markdown blockquote{margin:8px 0}.markdown blockquote{padding-left:12px;border-left:3px solid var(--vscode-textBlockQuote-border);color:var(--vscode-descriptionForeground)}.markdown code{font-family:var(--vscode-editor-font-family);background:var(--vscode-textCodeBlock-background);padding:1px 4px;border-radius:3px}.markdown pre code{padding:0;background:transparent}.markdown a{color:var(--vscode-textLink-foreground)}.markdown table{border-collapse:collapse;max-width:100%;display:block;overflow:auto}.markdown th,.markdown td{padding:5px 8px;border:1px solid var(--vscode-panel-border)}
+  </style></head><body><header><div class="header-title"><h1 id="title"></h1><button type="button" id="interrupt" class="secondary" title="処理を中断 (Esc)" hidden>中断</button></div><p><span class="status" id="status"></span> <span id="current-activity"></span></p><p class="meta" id="cwd"></p></header><div id="attention"></div><div class="template-toolbar"><select id="prompt-template" aria-label="メッセージテンプレート"><option value="">テンプレートを選択...</option></select><button type="button" id="save-template" class="secondary">現在の本文を保存</button><button type="button" id="delete-template" class="secondary" disabled>削除</button></div><form class="message-form" id="message-form"><textarea id="message" aria-label="入力内容" placeholder="Codexへ追加入力...（Enterで送信、Shift+Enterで改行、Escで中断）"></textarea><button type="submit">送信</button></form><div class="tabs" role="tablist"><button class="tab" id="activity-tab" role="tab" aria-selected="true" aria-controls="activity-panel" data-tab="activity">アクティビティ</button><button class="tab" id="audit-tab" role="tab" aria-selected="false" aria-controls="audit-panel" data-tab="audit" tabindex="-1">監査ログ</button></div><section class="tabpanel" id="activity-panel" role="tabpanel"><p class="empty">アクティビティはまだありません。</p></section><section class="tabpanel" id="audit-panel" role="tabpanel" hidden><div class="audit-wrap"><table class="audit"><thead><tr><th>日時</th><th>判断</th><th>対象</th><th>理由</th><th>ルール</th></tr></thead><tbody></tbody></table><p class="empty">承認履歴はまだありません。</p></div></section><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
 }
 
 function auditDecisionLabel(decision: "auto_approved" | "accepted" | "accepted_for_session" | "declined"): string { return decision === "auto_approved" ? "自動承認" : decision === "accepted" ? "今回のみ許可" : decision === "accepted_for_session" ? "セッションで許可" : "拒否"; }

@@ -30,6 +30,7 @@ import { redactSensitive } from "./infrastructure/vscode/file-logger";
 import { ImageInputStore } from "./infrastructure/filesystem/image-input-store";
 import { SessionImageInputCoordinator } from "./presentation/session-image-input-coordinator";
 import { FigmaIntegrationService } from "./application/figma-integration";
+import { PromptTemplateStore } from "./infrastructure/vscode/prompt-template-store";
 
 let manager: SessionManager | undefined;
 let logger: FileLogger | undefined;
@@ -153,8 +154,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const integrationService = new WorktreeIntegrationService(repositoryManager, manager, worktreeMerges);
   const integrationPanel = new IntegrationPanel(repositoryManager, manager, integrationService, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), showError);
   const sessionImageInputs = new SessionImageInputCoordinator(manager, imageInputs);
+  const promptTemplates = new PromptTemplateStore(context.globalState);
   context.subscriptions.push(sessionImageInputs);
-  const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), context.extensionUri, sessionImageInputs, showError);
+  const detailPanel = new SessionDetailPanel(manager, repositoryManager, worktreeMerges, (groupId, repositoryId) => repositoryDiffPanel.showRepository(groupId, repositoryId), context.extensionUri, sessionImageInputs, promptTemplates, showError);
   const sessionsView = new SessionWebviewProvider(manager, authentication, (sessionId) => detailPanel.show(sessionId), (sessionId) => folderAnalysisPanel.showSession(sessionId), () => repositoryManager.list(), context.workspaceState, context.extensionUri, sessionImageInputs, showError);
   let repositoriesView: RepositoryWebviewProvider;
   const addRepository = async (candidate?: vscode.Uri): Promise<string | undefined> => {

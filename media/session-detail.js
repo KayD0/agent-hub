@@ -7,6 +7,18 @@
   const auditNodes = new Map();
   let images = [];
   let canInterrupt = false;
+  let templates = [];
+  if (!byId("prompt-template")) {
+    const toolbar = document.createElement("div");
+    toolbar.hidden = true;
+    toolbar.innerHTML = '<select id="prompt-template"></select><button id="save-template" type="button"></button><button id="delete-template" type="button"></button>';
+    byId("message-form").before(toolbar);
+  }
+  if (!byId("rename-template")) {
+    const rename = document.createElement("button");
+    rename.id = "rename-template"; rename.type = "button"; rename.className = "secondary"; rename.textContent = "名前変更"; rename.disabled = true;
+    byId("save-template").after(rename);
+  }
 
   function drawImages() {
     let container = byId("message-images");
@@ -37,12 +49,42 @@
     byId("cwd").textContent = session.cwd;
     canInterrupt = session.canInterrupt;
     byId("interrupt").hidden = !session.canInterrupt;
+    updateTemplates(session.promptTemplates || []);
     const attention = byId("attention");
     if (attention.dataset.html !== session.attentionHtml) { attention.dataset.html = session.attentionHtml; attention.innerHTML = session.attentionHtml; }
     reconcile(activityPanel, session.activities, activityNodes, "article");
     activityPanel.querySelector(".empty").hidden = session.activities.length > 0;
     reconcile(auditBody, session.audits, auditNodes, "tr");
     document.querySelector("#audit-panel .empty").hidden = session.audits.length > 0;
+  }
+
+  function updateTemplates(nextTemplates) {
+    const select = byId("prompt-template");
+    const selected = select.value;
+    templates = nextTemplates;
+    const groups = new Map();
+    for (const template of templates) {
+      if (!groups.has(template.category)) groups.set(template.category, []);
+      groups.get(template.category).push(template);
+    }
+    const placeholder = document.createElement("option");
+    placeholder.value = ""; placeholder.textContent = "テンプレートを選択...";
+    const nodes = [placeholder];
+    for (const [category, items] of groups) {
+      const group = document.createElement("optgroup"); group.label = category;
+      for (const template of items) { const option = document.createElement("option"); option.value = template.id; option.textContent = template.name; group.append(option); }
+      nodes.push(group);
+    }
+    select.replaceChildren(...nodes);
+    if (templates.some((template) => template.id === selected)) select.value = selected;
+    updateDeleteButton();
+  }
+
+  function updateDeleteButton() {
+    const selected = templates.find((template) => template.id === byId("prompt-template").value);
+    byId("delete-template").disabled = !selected;
+    byId("rename-template").disabled = !selected || selected.builtIn;
+    byId("save-template").textContent = selected && !selected.builtIn ? "上書き保存" : "現在の本文を保存";
   }
 
   const tabs = [...document.querySelectorAll('[role="tab"]')];
@@ -55,6 +97,10 @@
   activateTab(["activity", "audit"].includes(savedTab) ? savedTab : "activity");
 
   const form = byId("message-form"); const input = byId("message");
+  byId("prompt-template").addEventListener("change", (event) => { const template = templates.find((item) => item.id === event.target.value); if (template) { input.value = template.text; input.focus(); input.setSelectionRange(input.value.length, input.value.length); } updateDeleteButton(); });
+  byId("save-template").addEventListener("click", () => { if (!input.value.trim()) { window.alert("保存する本文を入力してください。"); return; } const selected = templates.find((template) => template.id === byId("prompt-template").value); const message = { type: "saveTemplate", text: input.value }; if (selected && !selected.builtIn) message.templateId = selected.id; vscode.postMessage(message); });
+  byId("rename-template").addEventListener("click", () => { const templateId = byId("prompt-template").value; if (templateId) vscode.postMessage({ type: "renameTemplate", templateId }); });
+  byId("delete-template").addEventListener("click", () => { const templateId = byId("prompt-template").value; if (templateId) vscode.postMessage({ type: "deleteTemplate", templateId }); });
   form.addEventListener("submit", (event) => { event.preventDefault(); if (!input.value.trim() && !images.length) return; const message = { type: "send", text: input.value }; if (images.length) message.images = images.map(({ mimeType, dataUrl }) => ({ mimeType, dataUrl })); vscode.postMessage(message); input.value = ""; images = []; drawImages(); });
   input.addEventListener("paste", async (event) => { const files = [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file" && ["image/png", "image/jpeg"].includes(item.type)).map((item) => item.getAsFile()).filter(Boolean); if (!files.length) return; event.preventDefault(); if (images.length + files.length > 4 || files.some((file) => file.size > 10 * 1024 * 1024)) { window.alert("画像はPNG/JPEG、1枚10MB以内、一度に4枚までです。"); return; } images.push(...await Promise.all(files.map(imageData))); drawImages(); });
   input.addEventListener("keydown", (event) => { if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return; event.preventDefault(); form.requestSubmit(); });
@@ -65,6 +111,6 @@
     vscode.postMessage({ type: "interrupt" });
   });
   byId("attention").addEventListener("click", (event) => { const button = event.target.closest?.("[data-decision]"); if (button) vscode.postMessage({ type: "approval", decision: button.dataset.decision }); });
-  window.addEventListener("message", (event) => { if (event.data?.type === "sessionDetail") update(event.data.session); });
+  window.addEventListener("message", (event) => { if (event.data?.type === "sessionDetail") update(event.data.session); else if (event.data?.type === "templateSelected") { byId("prompt-template").value = event.data.templateId; updateDeleteButton(); } });
   vscode.postMessage({ type: "ready" });
 })();

@@ -2,7 +2,7 @@
   "name": "agenthub-codex",
   "displayName": "AgentHub for Codex",
   "description": "Monitor and control multiple Codex app-server sessions from one VS Code view.",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "publisher": "local",
   "repository": {
     "type": "git",
