@@ -29,6 +29,7 @@ import { collectEnvironmentDiagnostics } from "./infrastructure/system/environme
 import { redactSensitive } from "./infrastructure/vscode/file-logger";
 import { ImageInputStore } from "./infrastructure/filesystem/image-input-store";
 import { SessionImageInputCoordinator } from "./presentation/session-image-input-coordinator";
+import { FigmaIntegrationService } from "./application/figma-integration";
 
 let manager: SessionManager | undefined;
 let logger: FileLogger | undefined;
@@ -46,6 +47,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const githubEnvironment = sharedGitHubEnvironment();
   await logger.info("Extension activation started", { codexPath: codexPath ?? "PATH:codex" });
   const gateway = new AppServerClient(readCodexPath, (message) => void logger?.info("Codex app-server event", summarizeAppServerLog(message)), codexArgs, 30_000, githubEnvironment);
+  const figmaIntegration = new FigmaIntegrationService(gateway);
   const authentication = new AuthenticationManager(gateway);
   const gitReader = new GitRepositoryReader();
   const repositoryManager = new RepositoryManager(context.globalState, gitReader);
@@ -276,9 +278,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("agentHub.openRepositoryIssues", (repositoryId?: string) => repositoryId ? githubIssuesPanel.show(repositoryId) : repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.refreshRepositories", () => repositoriesView.refresh()),
     vscode.commands.registerCommand("agentHub.removeRepository", removeRepository),
-    vscode.commands.registerCommand("agentHub.openSetup", () => showSetup(context, authentication, output)),
+    vscode.commands.registerCommand("agentHub.openSetup", () => showSetup(context, authentication, figmaIntegration, output)),
     vscode.commands.registerCommand("agentHub.openCodexRules", () => openCodexRules().catch(showError)),
-    vscode.commands.registerCommand("agentHub.redetectEnvironment", () => showSetup(context, authentication, output)),
+    vscode.commands.registerCommand("agentHub.redetectEnvironment", () => showSetup(context, authentication, figmaIntegration, output)),
     vscode.commands.registerCommand("agentHub.showLogs", () => output.show(true)),
     vscode.commands.registerCommand("agentHub.exportDiagnostics", () => exportDiagnostics(context, authentication)),
     vscode.commands.registerCommand("agentHub.githubLogin", () => { const terminal = vscode.window.createTerminal({ name: "GitHub CLI Login", env: { GH_CONFIG_DIR: githubEnvironment.GH_CONFIG_DIR } }); terminal.show(); terminal.sendText("gh auth login", true); }),
@@ -311,35 +313,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     showError(error);
   }
 
-  if (!context.globalState.get<boolean>("agentHub.setupPromptDismissed.v1", false)) void promptForSetup(context, authentication, output);
+  if (!context.globalState.get<boolean>("agentHub.setupPromptDismissed.v1", false)) void promptForSetup(context, authentication, figmaIntegration, output);
 }
 
-async function promptForSetup(context: vscode.ExtensionContext, authentication: AuthenticationManager, output: vscode.OutputChannel): Promise<void> {
+async function promptForSetup(context: vscode.ExtensionContext, authentication: AuthenticationManager, figmaIntegration: FigmaIntegrationService, output: vscode.OutputChannel): Promise<void> {
   const action = await vscode.window.showInformationMessage("AgentHubの利用環境を確認しますか？", "セットアップを開く", "今後表示しない");
-  if (action === "セットアップを開く") await showSetup(context, authentication, output);
+  if (action === "セットアップを開く") await showSetup(context, authentication, figmaIntegration, output);
   if (action === "今後表示しない") await context.globalState.update("agentHub.setupPromptDismissed.v1", true);
 }
 
-async function showSetup(context: vscode.ExtensionContext, authentication: AuthenticationManager, output: vscode.OutputChannel): Promise<void> {
-  const diagnostics = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: "AgentHub: 環境を診断中" }, () => collectDiagnostics(context, authentication));
+async function showSetup(context: vscode.ExtensionContext, authentication: AuthenticationManager, figmaIntegration: FigmaIntegrationService, output: vscode.OutputChannel): Promise<void> {
+  const [diagnostics, figma] = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Window, title: "AgentHub: 環境を診断中" },
+    () => Promise.all([collectDiagnostics(context, authentication), figmaIntegration.getState()]),
+  );
   type SetupItem = vscode.QuickPickItem & { action?: string };
   const icon = (status: string) => status === "ready" ? "$(pass-filled)" : status === "error" ? "$(error)" : "$(warning)";
   const selected = await vscode.window.showQuickPick<SetupItem>([
     { label: `${icon(diagnostics.codex.status)} ${diagnostics.codex.label}`, description: diagnostics.codex.detail, action: diagnostics.codex.status === "ready" ? undefined : "codex" },
     { label: `${icon(diagnostics.codexAuthentication.status)} ${diagnostics.codexAuthentication.label}`, description: diagnostics.codexAuthentication.detail, action: diagnostics.codexAuthentication.status === "ready" ? undefined : "login" },
     { label: `${icon(diagnostics.github.status)} ${diagnostics.github.label}`, description: diagnostics.github.detail, action: diagnostics.github.status === "ready" ? undefined : "github" },
+    {
+      label: `${icon(figma.status === "ready" ? "ready" : figma.status === "error" ? "error" : "warning")} Figma MCP`,
+      description: figma.detail,
+      action: figma.status === "not_configured" ? "figmaConfigure" : figma.status === "authentication_required" ? "figmaLogin" : figma.status === "error" ? "retry" : undefined,
+    },
     { label: "$(refresh) 再診断", action: "retry" },
     { label: "$(settings-gear) Codex CLIパス設定を開く", action: "settings" },
     { label: "$(output) AgentHubログを表示", action: "logs" },
     { label: "$(export) 安全な診断情報をエクスポート", action: "export" },
   ], { title: "AgentHub セットアップ・診断", placeHolder: "状態を確認するか、復旧操作を選択してください" });
   if (!selected?.action) return;
-  if (selected.action === "retry") return showSetup(context, authentication, output);
+  if (selected.action === "retry") return showSetup(context, authentication, figmaIntegration, output);
   if (selected.action === "settings" || selected.action === "codex") return void vscode.commands.executeCommand("workbench.action.openSettings", "agentHub.codexPath");
   if (selected.action === "login") return void vscode.commands.executeCommand("agentHub.login");
   if (selected.action === "github") return void vscode.commands.executeCommand("agentHub.githubLogin");
+  if (selected.action === "figmaConfigure") {
+    const answer = await vscode.window.showWarningMessage(
+      "Codexのユーザー設定へ公式Figma MCP（https://mcp.figma.com/mcp）を追加します。",
+      { modal: true },
+      "Figma MCPを追加",
+    );
+    if (answer !== "Figma MCPを追加") return;
+    const state = await figmaIntegration.configure();
+    if (state.status === "authentication_required") return startFigmaLogin(context, authentication, figmaIntegration, output);
+    void vscode.window.showInformationMessage(state.status === "ready" ? "Figma MCPを接続しました。" : `Figma MCP: ${state.detail}`);
+    return showSetup(context, authentication, figmaIntegration, output);
+  }
+  if (selected.action === "figmaLogin") return startFigmaLogin(context, authentication, figmaIntegration, output);
   if (selected.action === "logs") return output.show(true);
   if (selected.action === "export") await exportDiagnostics(context, authentication);
+}
+
+async function startFigmaLogin(context: vscode.ExtensionContext, authentication: AuthenticationManager, figmaIntegration: FigmaIntegrationService, output: vscode.OutputChannel): Promise<void> {
+  try {
+    const login = await figmaIntegration.startLogin();
+    const opened = await vscode.env.openExternal(vscode.Uri.parse(login.authorizationUrl));
+    if (!opened) throw new Error("Figma認証ページを開けませんでした。");
+    const action = await vscode.window.showInformationMessage("ブラウザでFigma認証を完了してください。", "接続状態を再確認");
+    if (action === "接続状態を再確認") await showSetup(context, authentication, figmaIntegration, output);
+  } catch (error) {
+    showError(error);
+  }
 }
 
 async function collectDiagnostics(context: vscode.ExtensionContext, authentication: AuthenticationManager) {

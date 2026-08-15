@@ -6,6 +6,7 @@ import * as readline from "node:readline";
 import { AppServerEvent, AppServerRequest, CodexGateway } from "../../application/ports";
 import { AccountSnapshot, LoginStartResult } from "../../domain/authentication";
 import { CodexInput } from "../../domain/codex-input";
+import { McpServerSummary } from "../../application/figma-integration";
 import { decodeRpcMessage } from "./jsonl-protocol";
 
 type RequestId = number;
@@ -19,7 +20,7 @@ interface PendingRpc {
 interface RpcMessage {
   id?: string | number;
   method?: string;
-  params?: Record<string, unknown>;
+  params?: unknown;
   result?: unknown;
   error?: { code?: number; message?: string; data?: unknown };
 }
@@ -161,6 +162,41 @@ export class AppServerClient implements CodexGateway {
     await this.request("account/logout", {});
   }
 
+  public async listMcpServers(): Promise<McpServerSummary[]> {
+    const result = asObject(await this.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" }));
+    return Array.isArray(result.data) ? result.data.flatMap((value) => {
+      const server = asObject(value);
+      const name = asString(server.name);
+      if (!name) return [];
+      const authStatus = asString(server.authStatus);
+      const tools = asObject(server.tools);
+      return [{
+        name,
+        authStatus: authStatus === "unsupported" || authStatus === "notLoggedIn" || authStatus === "bearerToken" || authStatus === "oAuth" ? authStatus : "unknown",
+        toolCount: Object.keys(tools).length,
+      } satisfies McpServerSummary];
+    }) : [];
+  }
+
+  public async writeMcpServerConfig(name: string, url: string): Promise<void> {
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error("MCPサーバー名が不正です。");
+    await this.request("config/batchWrite", {
+      edits: [{ keyPath: `mcp_servers.${name}.url`, value: url, mergeStrategy: "upsert" }],
+      reloadUserConfig: true,
+    });
+  }
+
+  public async reloadMcpServers(): Promise<void> {
+    await this.request("config/mcpServer/reload", null);
+  }
+
+  public async startMcpOauthLogin(name: string): Promise<{ authorizationUrl: string }> {
+    const result = asObject(await this.request("mcpServer/oauth/login", { name }));
+    const authorizationUrl = asString(result.authorizationUrl);
+    if (!authorizationUrl) throw new Error("Figma認証URLを取得できませんでした。");
+    return { authorizationUrl };
+  }
+
   public respond(requestId: string | number, result: unknown): void {
     this.write({ id: requestId, result });
   }
@@ -180,7 +216,7 @@ export class AppServerClient implements CodexGateway {
     return { dispose: () => this.events.off("exit", listener) };
   }
 
-  private request(method: string, params: Record<string, unknown>): Promise<unknown> {
+  private request(method: string, params: unknown): Promise<unknown> {
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -212,17 +248,19 @@ export class AppServerClient implements CodexGateway {
     }
 
     if (message.method && message.id !== undefined) {
+      const params = asObject(message.params);
       this.events.emit("request", {
         id: message.id,
         method: message.method,
-        params: message.params ?? {},
+        params,
       } satisfies AppServerRequest);
       return;
     }
     if (message.method) {
+      const params = asObject(message.params);
       this.events.emit("event", {
         method: message.method,
-        params: message.params ?? {},
+        params,
       } satisfies AppServerEvent);
       return;
     }

@@ -42,6 +42,10 @@ test("AppServerClient exchanges JSONL with a fake app-server", async () => {
     requiresOpenaiAuth: true,
   });
   assert.deepEqual(await client.startThread("C:\\work"), { threadId: "fake-thread" });
+  assert.deepEqual(await client.listMcpServers(), [{ name: "figma", authStatus: "notLoggedIn", toolCount: 1 }]);
+  await client.writeMcpServerConfig("figma", "https://mcp.figma.com/mcp");
+  await client.reloadMcpServers();
+  assert.deepEqual(await client.startMcpOauthLogin("figma"), { authorizationUrl: "https://figma.example.test/oauth" });
   await client.stop();
 });
 

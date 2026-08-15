@@ -10,6 +10,11 @@ reader.on("line", (line) => {
   if (message.method === "account/read") {
     return send({ id: message.id, result: { account: { type: "chatgpt", email: "fake@example.test" }, requiresOpenaiAuth: true } });
   }
+  if (message.method === "mcpServerStatus/list") {
+    return send({ id: message.id, result: { data: [{ name: "figma", authStatus: "notLoggedIn", tools: { inspect: { name: "inspect" } }, resources: [], resourceTemplates: [] }] } });
+  }
+  if (message.method === "config/batchWrite" || message.method === "config/mcpServer/reload") return send({ id: message.id, result: {} });
+  if (message.method === "mcpServer/oauth/login") return send({ id: message.id, result: { authorizationUrl: "https://figma.example.test/oauth" } });
   if (message.method === "thread/start") {
     if (message.params?.cwd?.endsWith("__timeout__")) return;
     if (message.params?.cwd?.endsWith("__crash__")) return process.exit(23);
