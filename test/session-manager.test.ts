@@ -135,6 +135,31 @@ class RetryGateway extends FakeGateway {
   }
 }
 
+class ConcurrentResumeGateway extends FakeGateway {
+  public activeResumes = 0;
+  public maxActiveResumes = 0;
+  public override async resumeThread(): Promise<void> {
+    this.resumes += 1;
+    this.activeResumes += 1;
+    this.maxActiveResumes = Math.max(this.maxActiveResumes, this.activeResumes);
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    this.activeResumes -= 1;
+  }
+}
+
+test("persisted sessions are published before restoration and restore at bounded concurrency", async () => {
+  const repository = new MemoryRepository();
+  repository.value = Array.from({ length: 10 }, (_, index) => persistedSession(`thread-${index}`, `session-${index}`, index));
+  const gateway = new ConcurrentResumeGateway();
+  const manager = new SessionManager(gateway, repository);
+  let publishedBeforeCompletion = false;
+  manager.onDidChange(() => { if (manager.list().length === 10 && gateway.resumes < 10) publishedBeforeCompletion = true; });
+  await manager.initialize();
+  assert.equal(publishedBeforeCompletion, true);
+  assert.equal(gateway.maxActiveResumes, 4);
+  assert.equal(gateway.resumes, 10);
+});
+
 function persistedSession(id: string, title: string, updatedAt: number, status: SessionStatus = "completed"): PersistedSession {
   return {
     id,

@@ -21,6 +21,7 @@ import { CodexInput } from "../domain/codex-input";
 const MAX_ACTIVITIES = 500;
 const MAX_APPROVAL_AUDIT_ENTRIES = 200;
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000];
+const MAX_CONCURRENT_THREAD_RESTORES = 4;
 
 export interface SessionChange {
   sessionId?: string;
@@ -57,6 +58,7 @@ export class SessionManager {
     for (const persisted of await this.repository.load()) {
       this.sessions.set(persisted.id, this.fromPersisted(persisted));
     }
+    this.emitChange();
     if (!this.listenersRegistered) {
       this.gateway.onEvent((event) => this.handleEvent(event));
       this.gateway.onRequest((request) => this.handleRequest(request));
@@ -353,23 +355,33 @@ export class SessionManager {
   }
 
   private async restoreThreads(): Promise<void> {
-    for (const session of this.sessions.values()) {
+    const sessions = [...this.sessions.values()];
+    const restoredStatuses = new Map<string, SessionStatus>();
+    for (const session of sessions) {
       const restoredStatus = this.interruptedByExit.has(session.id) ? "interrupted" : statusAfterResume(session.status);
-      session.pendingInteraction = undefined;
-      session.status = "disconnected";
-      session.attention = attentionForStatus("disconnected");
-      session.currentActivity = "セッション状態を復元中です";
-      try {
-        await this.gateway.resumeThread(session.threadId);
-        session.status = restoredStatus;
-        session.attention = attentionForStatus(session.status);
-        session.currentActivity = activityAfterResume(restoredStatus);
-      } catch (error) {
-        session.currentActivity = `復元できません: ${errorMessage(error)}`;
-      } finally {
-        this.interruptedByExit.delete(session.id);
-      }
+      restoredStatuses.set(session.id, restoredStatus);
+      Object.assign(session, { pendingInteraction: undefined, status: "disconnected", attention: attentionForStatus("disconnected"), currentActivity: "セッション状態を復元中です" });
     }
+    this.emitChange();
+    let nextIndex = 0;
+    const restoreNext = async (): Promise<void> => {
+      while (nextIndex < sessions.length) {
+        const session = sessions[nextIndex++];
+        const restoredStatus = restoredStatuses.get(session.id) ?? statusAfterResume(session.status);
+        try {
+          await this.gateway.resumeThread(session.threadId);
+          session.status = restoredStatus;
+          session.attention = attentionForStatus(session.status);
+          session.currentActivity = activityAfterResume(restoredStatus);
+        } catch (error) {
+          session.currentActivity = `復元できません: ${errorMessage(error)}`;
+        } finally {
+          this.interruptedByExit.delete(session.id);
+          this.emitChange(session.id);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_THREAD_RESTORES, sessions.length) }, () => restoreNext()));
     await this.persist();
   }
 

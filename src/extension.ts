@@ -307,10 +307,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await authentication.initialize();
     await logger.info("Authentication initialization completed", authentication.getState());
     await logger.info("Session manager initialization started");
-    await manager.initialize();
-    await logger.info("Session manager initialization completed");
+    void manager.initialize().then(
+      () => logger?.info("Session manager initialization completed"),
+      async (error) => { await logger?.error("Session manager initialization failed", error); output.show(true); showError(error); },
+    );
   } catch (error) {
-    await logger.error("Session manager initialization failed", error);
+    await logger.error("Authentication initialization failed", error);
     output.show(true);
     showError(error);
   }
