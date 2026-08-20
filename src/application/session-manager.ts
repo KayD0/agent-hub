@@ -160,19 +160,19 @@ export class SessionManager {
     }
   }
 
-  public async steer(sessionId: string, text: string, imagePaths: readonly string[] = []): Promise<void> {
+  public async steer(sessionId: string, text: string, imagePaths: readonly string[] = [], filePaths: readonly string[] = []): Promise<void> {
     const session = this.requireSession(sessionId);
     if (!session.currentTurnId) throw new Error("実行中のターンがありません。");
-    await this.gateway.steerTurn(session.threadId, session.currentTurnId, messageInput(text, imagePaths));
+    await this.gateway.steerTurn(session.threadId, session.currentTurnId, messageInput(text, imagePaths, filePaths));
     session.lastInstruction = text;
     this.appendActivity(session, "message", "追加入力", text);
     this.setStatus(session, "running", "追加入力を処理中です");
   }
 
-  public async sendMessage(sessionId: string, text: string, imagePaths: readonly string[] = []): Promise<void> {
+  public async sendMessage(sessionId: string, text: string, imagePaths: readonly string[] = [], filePaths: readonly string[] = []): Promise<void> {
     const session = this.requireSession(sessionId);
     if (session.currentTurnId) {
-      await this.steer(sessionId, text, imagePaths);
+      await this.steer(sessionId, text, imagePaths, filePaths);
       return;
     }
 
@@ -180,7 +180,7 @@ export class SessionManager {
     this.appendActivity(session, "message", "追加指示", text);
     this.setStatus(session, "starting", "新しいターンを開始しています");
     try {
-      const result = await this.gateway.startTurn(session.threadId, messageInput(text, imagePaths));
+      const result = await this.gateway.startTurn(session.threadId, messageInput(text, imagePaths, filePaths));
       session.currentTurnId = result.turnId;
       this.setStatus(session, "running", "Codexが処理中です");
     } catch (error) {
@@ -706,8 +706,9 @@ function compact(value: string, length: number): string {
   return normalized.length <= length ? normalized : `${normalized.slice(0, length - 1)}…`;
 }
 
-function messageInput(text: string, imagePaths: readonly string[] = []): CodexInput[] {
-  const normalized = text.trim() || "添付画像を確認してください。";
+function messageInput(text: string, imagePaths: readonly string[] = [], filePaths: readonly string[] = []): CodexInput[] {
+  const fileInstruction = filePaths.length ? `\n\n添付PDFを次のローカルパスから読み取って確認してください。\n${filePaths.map((filePath) => `- ${filePath}`).join("\n")}` : "";
+  const normalized = (text.trim() || (imagePaths.length ? "添付画像を確認してください。" : "添付PDFを確認してください。")) + fileInstruction;
   return [{ type: "text", text: normalized }, ...imagePaths.map((imagePath): CodexInput => ({ type: "localImage", path: imagePath }))];
 }
 

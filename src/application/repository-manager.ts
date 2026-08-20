@@ -62,10 +62,15 @@ export class RepositoryManager implements vscode.Disposable {
   public async snapshot(repository: DiscoveredRepository): Promise<RepositorySnapshot> {
     const openInWorkspace = (vscode.workspace.workspaceFolders ?? []).some((folder) => isInside(repository.rootPath, folder.uri.fsPath));
     try {
-      const [branch, files, baseBranchCandidates] = await Promise.all([this.reader.readBranch(repository.rootPath), this.reader.readChanges(repository.rootPath), this.reader.readBranches(repository.rootPath)]);
+      // Local changes are the primary repository view and must not depend on optional
+      // remote or merge metadata being available.
+      const [branch, files] = await Promise.all([this.reader.readBranch(repository.rootPath), this.reader.readChanges(repository.rootPath)]);
+      const baseBranchCandidates = await this.reader.readBranches(repository.rootPath).catch(() => [] as string[]);
       const configuredBase = this.baseBranches[repositoryKey(repository.rootPath)];
-      const baseBranch = configuredBase && baseBranchCandidates.includes(configuredBase) ? configuredBase : await this.reader.readDefaultBranch(repository.rootPath, baseBranchCandidates);
-      const merged = await this.reader.isMergedInto(repository.rootPath, branch, baseBranch);
+      const baseBranch = configuredBase && baseBranchCandidates.includes(configuredBase)
+        ? configuredBase
+        : await this.reader.readDefaultBranch(repository.rootPath, baseBranchCandidates).catch(() => undefined);
+      const merged = await this.reader.isMergedInto(repository.rootPath, branch, baseBranch).catch(() => undefined);
       const mergeStatus = !branch || !baseBranch || merged === undefined ? "unknown" : branch === baseBranch ? "base" : merged ? "merged" : "unmerged";
       return { ...repository, openInWorkspace, branch, baseBranch, baseBranchCandidates, mergeStatus, files, additions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0), deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0) };
     } catch (error) {

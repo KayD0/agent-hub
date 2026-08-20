@@ -89,6 +89,27 @@ test("lists selectable branches and detects whether the current branch is merged
   }
 });
 
+test("reads local changes without an origin remote", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-local-only-repository-"));
+  try {
+    await execFileAsync("git", ["init", "-b", "develop"], { cwd: root });
+    await execFileAsync("git", ["config", "user.email", "agenthub@example.test"], { cwd: root });
+    await execFileAsync("git", ["config", "user.name", "AgentHub Test"], { cwd: root });
+    await fs.writeFile(path.join(root, "README.md"), "initial\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root });
+    await fs.writeFile(path.join(root, "README.md"), "changed\n");
+    const reader = new GitRepositoryReader();
+
+    await assert.rejects(() => execFileAsync("git", ["remote", "get-url", "origin"], { cwd: root }));
+    assert.equal(await reader.readBranch(root), "develop");
+    assert.deepEqual(await reader.readBranches(root), ["develop"]);
+    assert.deepEqual(await reader.readChanges(root), [{ path: "README.md", kind: "modified", binary: false, additions: 1, deletions: 1 }]);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("renders an untracked file as an inline unified diff", async () => {
   const reader = new GitRepositoryReader();
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-inline-diff-"));

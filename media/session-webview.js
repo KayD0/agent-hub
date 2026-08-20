@@ -25,12 +25,15 @@
   const interruptibleStatuses = new Set(["starting", "running", "waiting_for_input"]);
 
   function pastedImages(event) {
-    return [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file" && ["image/png", "image/jpeg"].includes(item.type)).map((item) => item.getAsFile()).filter(Boolean);
+    return supportedFiles([...(event.clipboardData?.items || [])].filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(Boolean));
   }
 
+  function attachmentType(file) { const name = (file.name || "").toLowerCase(); return file.type || (name.endsWith(".pdf") ? "application/pdf" : name.endsWith(".png") ? "image/png" : name.endsWith(".jpg") || name.endsWith(".jpeg") ? "image/jpeg" : ""); }
   function imageData(file) {
-    return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ mimeType: file.type, dataUrl: reader.result }); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
+    return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ mimeType: attachmentType(file), dataUrl: reader.result.replace(/^data:[^;]*;/, `data:${attachmentType(file)};`), name: file.name }); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
   }
+
+  function supportedFiles(files) { return [...files].filter((file) => ["image/png", "image/jpeg", "application/pdf"].includes(attachmentType(file))); }
 
   function el(tag, className, text) {
     const node = document.createElement(tag);
@@ -214,6 +217,16 @@
     attachments.title = "貼り付けた画像をすべて削除";
     attachments.tabIndex = 0;
     const clearImages = () => { images = []; attachments.hidden = true; attachments.textContent = "📎 0"; };
+    const addFiles = async (files) => {
+      const supported = supportedFiles(files);
+      if (!supported.length) return false;
+      if (images.length + supported.length > maxImages || supported.some((file) => file.size > 10 * 1024 * 1024)) { window.alert("PNG/JPEG/PDFを合計4件まで、1件10MB以内で添付できます。"); return true; }
+      images.push(...await Promise.all(supported.map(imageData)));
+      attachments.hidden = false;
+      attachments.textContent = "📎 " + images.length;
+      attachments.setAttribute("aria-label", `添付ファイル${images.length}件。押すとすべて削除`);
+      return true;
+    };
     attachments.addEventListener("click", clearImages);
     attachments.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") clearImages(); });
     form.append(input, attachments, send);
@@ -231,12 +244,11 @@
       const files = pastedImages(event);
       if (!files.length) return;
       event.preventDefault();
-      if (images.length + files.length > maxImages || files.some((file) => file.size > 10 * 1024 * 1024)) { window.alert("画像はPNG/JPEG、1枚10MB以内、一度に4枚までです。"); return; }
-      images.push(...await Promise.all(files.map(imageData)));
-      attachments.hidden = false;
-      attachments.textContent = "📎 " + images.length;
-      attachments.setAttribute("aria-label", `添付画像${images.length}枚。押すとすべて削除`);
+      await addFiles(files);
     });
+    form.addEventListener("dragover", (event) => { if (!supportedFiles(event.dataTransfer?.files || []).length) return; event.preventDefault(); form.classList.add("attachment-dragover"); });
+    form.addEventListener("dragleave", () => form.classList.remove("attachment-dragover"));
+    form.addEventListener("drop", async (event) => { form.classList.remove("attachment-dragover"); if (await addFiles(event.dataTransfer?.files || [])) event.preventDefault(); });
     input.addEventListener("compositionstart", () => { composingSessionId = card.dataset.sessionId; });
     input.addEventListener("compositionend", () => { composingSessionId = undefined; });
     input.addEventListener("keydown", (event) => {

@@ -49,6 +49,36 @@ test("pasted images are validated, stored, and removed", async () => {
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test("pasted PDFs are validated, stored, and passed to Codex as a readable local path", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-pdfs-"));
+  const gateway = new FakeGateway();
+  const manager = new SessionManager(gateway, new MemoryRepository());
+  const store = new ImageInputStore(root);
+  const coordinator = new SessionImageInputCoordinator(manager, store);
+  try {
+    await manager.initialize();
+    const session = await manager.createSession("C:\\work");
+    const pdf = Buffer.from("%PDF-1.7\n%%EOF\n");
+    const attachments = parsePastedImages([{ mimeType: "application/pdf", name: "spec.pdf", dataUrl: `data:application/pdf;base64,${pdf.toString("base64")}` }]);
+    assert.equal(attachments?.[0]?.name, "spec.pdf");
+
+    await coordinator.sendMessage(session.id, "Review this document", attachments!);
+
+    const input = gateway.turnInputs.at(-1) ?? [];
+    assert.equal(input.some((item) => item.type === "localImage"), false);
+    const text = input.find((item) => item.type === "text");
+    assert.equal(text?.type, "text");
+    assert.match(text!.text, /添付PDF/);
+    const pdfPath = text!.text.split("\n").find((line) => line.endsWith(".pdf"))?.replace(/^- /, "");
+    assert.ok(pdfPath);
+    assert.deepEqual(await fs.readFile(pdfPath), pdf);
+    await assert.rejects(() => store.save([{ mimeType: "application/pdf", dataUrl: "data:application/pdf;base64,aGVsbG8=" }]));
+  } finally {
+    coordinator.dispose();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("pasted images remain available until the turn completes", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "agenthub-images-"));
   const gateway = new FakeGateway();

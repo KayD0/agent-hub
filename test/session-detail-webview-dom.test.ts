@@ -38,6 +38,21 @@ test("detail image paste shows a removable thumbnail and sends the image", async
   assert.equal((posted.at(-1) as PostedMessage & { images?: unknown[] }).images?.length, 1);
 });
 
+test("detail accepts a dropped PDF and sends it as an attachment", async (context) => {
+  const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  const form = dom.window.document.querySelector<HTMLFormElement>("#message-form")!;
+  const file = new dom.window.File(["%PDF-1.7"], "spec.pdf", { type: "application/pdf" });
+  const drop = new dom.window.Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(drop, "dataTransfer", { value: { files: [file] } });
+  form.dispatchEvent(drop);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(dom.window.document.querySelector("#message-images .pdf-attachment")?.textContent, "PDF spec.pdf");
+  form.dispatchEvent(new dom.window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+  const attachment = (posted.at(-1) as PostedMessage & { images?: Array<{ mimeType: string; name?: string }> }).images?.[0];
+  assert.deepEqual(attachment && { mimeType: attachment.mimeType, name: attachment.name }, { mimeType: "application/pdf", name: "spec.pdf" });
+});
+
 function update(dom: JSDOM, session: ReturnType<typeof detail>) {
   dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "sessionDetail", session } }));
 }

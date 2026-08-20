@@ -254,3 +254,20 @@ test("card image paste shows only a paperclip count and sends the image", async 
   assert.equal(posted.at(-1)?.type, "send");
   assert.equal((posted.at(-1) as PostedMessage & { images?: unknown[] }).images?.length, 1);
 });
+
+test("card input accepts a dropped PDF", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one")]);
+  const form = dom.window.document.querySelector<HTMLFormElement>('[data-session-id="one"] .card-input-form')!;
+  const file = new dom.window.File(["%PDF-1.7"], "spec.pdf", { type: "application/pdf" });
+  const drop = new dom.window.Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(drop, "dataTransfer", { value: { files: [file] } });
+  form.dispatchEvent(drop);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(form.querySelector<HTMLElement>(".card-attachments")!.textContent, "📎 1");
+  form.dispatchEvent(new dom.window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+  const attachment = (posted.at(-1) as PostedMessage & { images?: Array<{ mimeType: string; name?: string }> }).images?.[0];
+  assert.deepEqual(attachment && { mimeType: attachment.mimeType, name: attachment.name }, { mimeType: "application/pdf", name: "spec.pdf" });
+});

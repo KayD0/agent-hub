@@ -1,5 +1,5 @@
 import { SessionChange, SessionManager } from "../application/session-manager";
-import { PastedImage } from "../domain/codex-input";
+import { PastedAttachment } from "../domain/codex-input";
 import { ImageInputStore } from "../infrastructure/filesystem/image-input-store";
 
 const FINISHED_STATUSES = new Set(["ready", "completed", "failed", "interrupted", "disconnected"]);
@@ -15,10 +15,12 @@ export class SessionImageInputCoordinator {
     this.subscription = manager.onDidChange((change) => this.handleSessionChange(change));
   }
 
-  public async sendMessage(sessionId: string, text: string, images: readonly PastedImage[]): Promise<void> {
+  public async sendMessage(sessionId: string, text: string, images: readonly PastedAttachment[]): Promise<void> {
     const paths = await this.store.save(images);
+    const imagePaths = paths.filter((_, index) => images[index]?.mimeType !== "application/pdf");
+    const pdfPaths = paths.filter((_, index) => images[index]?.mimeType === "application/pdf");
     try {
-      await this.manager.sendMessage(sessionId, text, paths);
+      await this.manager.sendMessage(sessionId, text, imagePaths, pdfPaths);
     } catch (error) {
       await this.store.remove(paths);
       throw error;
