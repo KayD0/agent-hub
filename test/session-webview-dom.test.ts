@@ -153,6 +153,18 @@ test("session Auto toggle posts the stable approval contract", async (context) =
   assert.equal(dom.window.document.querySelector<HTMLInputElement>(".auto-control input")?.checked, true);
 });
 
+test("clicking the final result opens the session detail", async (context) => {
+  const { dom, posted } = await createWebview();
+  context.after(() => dom.window.close());
+  update(dom, [session("one", { finalResult: "completed result" })]);
+
+  const result = dom.window.document.querySelector<HTMLButtonElement>(".result-toggle")!;
+  assert.equal(result.getAttribute("aria-label"), "最終結果の詳細を開く");
+  result.click();
+
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "open", sessionId: "one" }));
+});
+
 test("session unrestricted Auto toggle posts a separate approval contract", async (context) => {
   const { dom, posted } = await createWebview();
   context.after(() => dom.window.close());

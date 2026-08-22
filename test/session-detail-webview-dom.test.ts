@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
-interface PostedMessage { type: string; text?: string; decision?: string; candidateId?: string; candidateIds?: string[]; templateId?: string }
+interface PostedMessage { type: string; text?: string; decision?: string; candidateId?: string; candidateIds?: string[]; templateId?: string; url?: string }
 interface DetailItem { key: string; html: string }
 
 function detail(overrides: Record<string, unknown> = {}) {
@@ -96,6 +96,19 @@ test("detail send contract preserves IME composition", async (context) => {
   assert.equal(posted.length, 1);
   input.closest("form")!.dispatchEvent(new dom.window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
   assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "send", text: "日本語" }));
+});
+
+test("Codex result links include a copy action", async (context) => {
+  const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  update(dom, detail({ activities: [{ key: "link", html: '<div class="markdown"><p><a href="https://example.com/download?id=1">ダウンロード</a></p></div>' }] }));
+
+  const button = dom.window.document.querySelector<HTMLButtonElement>(".copy-link")!;
+  assert.equal(button.textContent, "コピー");
+  assert.equal(button.getAttribute("aria-label"), "リンク「ダウンロード」をコピー");
+  button.click();
+
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "copyLink", url: "https://example.com/download?id=1" }));
+  assert.equal(button.textContent, "コピー済み");
 });
 
 test("Escape interrupts only an interruptible detail session", async (context) => {

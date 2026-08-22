@@ -38,10 +38,24 @@
     let previous;
     for (const item of items) {
       let node = nodes.get(item.key);
-      if (!node) { node = document.createElement(tag); node.dataset.key = item.key; node.innerHTML = item.html; nodes.set(item.key, node); }
+      if (!node) { node = document.createElement(tag); node.dataset.key = item.key; node.innerHTML = item.html; addLinkCopyButtons(node); nodes.set(item.key, node); }
       const expected = previous ? previous.nextElementSibling : container.firstElementChild;
       if (expected !== node) container.insertBefore(node, expected);
       previous = node;
+    }
+  }
+
+  function addLinkCopyButtons(container) {
+    for (const link of container.querySelectorAll(".markdown a[href]")) {
+      const url = link.getAttribute("href");
+      if (!url || link.nextElementSibling?.classList.contains("copy-link")) continue;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-link";
+      button.textContent = "コピー";
+      button.dataset.url = url;
+      button.setAttribute("aria-label", `リンク「${link.textContent || url}」をコピー`);
+      link.after(button);
     }
   }
 
@@ -117,6 +131,14 @@
     vscode.postMessage({ type: "interrupt" });
   });
   byId("attention").addEventListener("click", (event) => { const button = event.target.closest?.("[data-decision]"); if (button) vscode.postMessage({ type: "approval", decision: button.dataset.decision }); });
+  activityPanel.addEventListener("click", (event) => {
+    const button = event.target.closest?.(".copy-link");
+    if (!button?.dataset.url) return;
+    vscode.postMessage({ type: "copyLink", url: button.dataset.url });
+    button.textContent = "コピー済み";
+    button.setAttribute("aria-label", "リンクをコピーしました");
+    window.setTimeout(() => { if (button.isConnected) { button.textContent = "コピー"; } }, 1500);
+  });
   window.addEventListener("message", (event) => { if (event.data?.type === "sessionDetail") update(event.data.session); else if (event.data?.type === "templateSelected") { byId("prompt-template").value = event.data.templateId; updateDeleteButton(); } });
   vscode.postMessage({ type: "ready" });
 })();

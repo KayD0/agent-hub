@@ -394,8 +394,9 @@
       popover.dataset.resultSession = session.id;
       const toggle = el("button", "result-toggle", "最終結果");
       toggle.type = "button";
-      toggle.setAttribute("aria-label", "最終結果を表示");
+      toggle.setAttribute("aria-label", "最終結果の詳細を開く");
       toggle.setAttribute("aria-describedby", resultId);
+      toggle.addEventListener("click", () => vscode.postMessage({ type: "open", sessionId: session.id }));
       const result = el("div", "result");
       result.id = resultId;
       result.setAttribute("role", "tooltip");
