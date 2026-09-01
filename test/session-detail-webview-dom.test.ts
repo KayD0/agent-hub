@@ -111,6 +111,19 @@ test("Codex result links include a copy action", async (context) => {
   assert.equal(button.textContent, "コピー済み");
 });
 
+test("clicking a local result link reveals the file in its folder", async (context) => {
+  const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
+  update(dom, detail({ activities: [{ key: "file", html: '<div class="markdown"><a href="C:/exports/Setup.exe">Setup</a></div>' }] }));
+
+  const link = dom.window.document.querySelector<HTMLAnchorElement>(".markdown a")!;
+  assert.equal(link.title, "クリックして保存先フォルダを開く");
+  const click = new dom.window.MouseEvent("click", { bubbles: true, cancelable: true });
+  link.dispatchEvent(click);
+
+  assert.equal(click.defaultPrevented, true);
+  assert.equal(JSON.stringify(posted.at(-1)), JSON.stringify({ type: "revealLocalFile", url: "C:/exports/Setup.exe" }));
+});
+
 test("Escape interrupts only an interruptible detail session", async (context) => {
   const { dom, posted } = await createWebview(); context.after(() => dom.window.close());
   update(dom, detail({ canInterrupt: true }));
